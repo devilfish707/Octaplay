@@ -1,0 +1,14 @@
+# Firmware, images and anything derived from Elektron code never enter the repo.
+*.bin
+*.syx
+*.zip
+*.os
+out/
+downloads/
+firmware/
+playmodes-probe*.txt
+
+# Local build and editor state
+__pycache__/
+*.pyc
+.DS_Store
