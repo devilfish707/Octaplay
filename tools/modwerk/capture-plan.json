@@ -1,0 +1,16 @@
+[
+  { "wait": 3000 },
+  { "press": ["YES"] },
+  { "wait": 2000 },
+  { "press": ["NO"] },
+  { "wait": 1500 },
+  { "hold": ["T1"] },
+  { "press": ["DOWN"] },
+  { "wait": 100 },
+  { "capture": "ot-mode-all-reversed.png" },
+  { "press": ["DOWN"] },
+  { "press": ["DOWN"] },
+  { "wait": 100 },
+  { "capture": "ot-mode-all-pingpong2.png" },
+  { "release": ["T1"] }
+]
