@@ -7,6 +7,9 @@ set -euo pipefail
 OS_FILE="${1:?pass your official OCTATRACK_OS1.40C.bin}"
 WORK="$HOME/Downloads/modwerk-pr"
 OUT="$HOME/Downloads/modwerk-pr-packages"
+# Colima shares only your home folder with its VM, and the build script
+# stages the source with mktemp: keep temporary folders under home.
+export TMPDIR="$HOME/.cache/modwerk-tmp"; mkdir -p "$TMPDIR"
 cd "$WORK"
 git fetch -q origin && git reset -q --hard origin/add-playmodes
 
