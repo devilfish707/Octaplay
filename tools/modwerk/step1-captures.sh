@@ -19,15 +19,15 @@ cd "$WORK" && git pull --ff-only
 cd "$WORK/sdk/octabam"
 bash scripts/vendor.sh mc68k dsp56300
 source scripts/vendor.sh && stage_dsp_host
-cmake -B "$WORK/out/emu" -S tools/emu/ot_emu -DCMAKE_BUILD_TYPE=Release > /dev/null
-cmake --build "$WORK/out/emu" -j8 --target ot_emu
+cmake -B "$WORK/sdk/octabam/out/emu" -S tools/emu/ot_emu -DCMAKE_BUILD_TYPE=Release > /dev/null
+cmake --build "$WORK/sdk/octabam/out/emu" -j8 --target ot_emu
 
 cd "$WORK"
-rm -rf "$WORK/out/captures"
+rm -rf "$WORK/sdk/octabam/out/captures"
 python3 -B scripts/capture-module-ui.py \
-  --emulator "$WORK/out/emu/ot_emu" \
+  --emulator "$WORK/sdk/octabam/out/emu/ot_emu" \
   --image "$IMAGE" --image-sha256 "$IMAGE_SHA" \
   --plan "$HERE/capture-plan.json" \
-  --output "$WORK/out/captures"
-open "$WORK/out/captures"
+  --output "$WORK/sdk/octabam/out/captures"
+open "$WORK/sdk/octabam/out/captures"
 echo "Done. Look at the two PNGs, then tell Claude the image SHA-256 above."
