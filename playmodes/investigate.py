@@ -112,9 +112,10 @@ def main():
     ap.add_argument("--os", type=pathlib.Path,
                     required=True,
                     help="your original 1.40C MAIN OS extraction")
-    ap.add_argument("--round", type=int, default=1, choices=(1, 2, 3, 4),
+    ap.add_argument("--round", type=int, default=1, choices=(1, 2, 3, 4, 5),
                     help="2: the step handler's callers and the key maps; 3: the playhead display; "
-                         "4: the project file loader / writer and how settings mark it for saving")
+                         "4: the project file loader / writer and how settings mark it for saving; "
+                         "5: the pattern record's tail, the bank serializer and deserializer")
     ap.add_argument("--out", type=pathlib.Path, default=REPO / "out/playmodes-probe.txt")
     args = ap.parse_args()
     if not args.os.is_file():
@@ -132,6 +133,9 @@ def main():
         return write(args, out)
     if args.round == 4:
         round_four(tool, args, image, out)
+        return write(args, out)
+    if args.round == 5:
+        round_five(tool, args, image, out)
         return write(args, out)
 
     for start, stop, why in RANGES:
@@ -299,6 +303,74 @@ def round_four(tool, args, image, out):
         out.append(f"==== 0x{address:08x} {why}: {len(hits)} reference(s)")
         for i in hits[:30]:
             out += full[max(0, i - 6):i + 4] + ["   ..."]
+        out.append("")
+
+
+# Round 5: per-pattern play modes. Where in a pattern's record (blob +
+# pattern*0x8ed8) could 9 bytes live that stock never uses, and are they
+# written to / read from bankNN.work? Known tail: 0x8e50..0x8e58 (master
+# length, scales, length, scale mode, part, tempo word; memory-map.md,
+# DSP.md). The rest up to 0x8ed8 is unaccounted for. So: every instruction
+# that names an offset in 0x8e40..0x8ed7 (hex or decimal) and the whole
+# serializer, deserializer, load-time clamp and pattern copy / paste.
+PATTERN_CODE = {
+    0x4008b278: ("bank serializer (fo, bank RAM)", 2500),
+    0x4008ded0: ("bank deserializer", 2500),
+    0x4009a670: ("load-time pattern clamp", 600),
+    0x40026dbc: ("pattern copy / paste", 600),
+    0x4002b9b0: ("clipboard -> pattern and its battery copy", 400),
+    0x40039df4: ("clear track", 300),
+    0x4003a2e8: ("clear pattern", 300),
+    0x4000faf0: ("current bank -> battery RAM", 200),
+    0x4000fbb4: ("battery RAM -> current bank", 200),
+}
+
+
+def round_five(tool, args, image, out):
+    full = disassemble(tool, args.os, BASE, BASE + len(image))
+    index = {address_of(line): k for k, line in enumerate(full)}
+    lo, hi = 0x8e40, 0x8ed8
+    hex_re = re.compile(r"0x([0-9a-f]+)")
+    dec_re = re.compile(r"(?<![0-9a-fx])(-?[0-9]+)(?![0-9])")
+    out.append(f"==== instructions naming 0x{lo:x}..0x{hi - 1:x} (pattern tail offsets), +-6 lines")
+    hits = []
+    for i, line in enumerate(full):
+        text = line.split("\t")[-1].lower()
+        values = [int(m, 16) for m in hex_re.findall(text)]
+        values += [int(m) for m in dec_re.findall(text.replace("0x", " x"))]
+        for v in values:
+            for w in (v, v & 0xffff if v < 0 else v):
+                if lo <= w < hi:
+                    hits.append((i, w))
+                    break
+            else:
+                continue
+            break
+    counts = {}
+    for i, w in hits:
+        counts[w] = counts.get(w, 0) + 1
+    out.append("   offset histogram: " + ", ".join(f"0x{w:x}x{n}" for w, n in sorted(counts.items())))
+    for i, w in hits[:600]:
+        out.append(f"-- offset 0x{w:x}")
+        out += full[max(0, i - 6):i + 7]
+    out.append("")
+    for address, (why, limit) in PATTERN_CODE.items():
+        i = index.get(address)
+        if i is None:
+            out.append(f"==== 0x{address:08x} {why}: not an instruction boundary")
+            continue
+        out.append(f"==== 0x{address:08x} {why} (up to {limit} lines, to its last rts)")
+        body, k, last_rts = [], i, None
+        while k < len(full) and len(body) < limit:
+            body.append(full[k])
+            if full[k].split("\t")[-1].strip().startswith("rts"):
+                last_rts = len(body)
+                # stop at an rts followed by a link / lea -n(sp) / movem: the next function
+                nxt = full[k + 1].split("\t")[-1].strip() if k + 1 < len(full) else ""
+                if nxt.startswith(("link", "lea %sp@(-", "moveml", "movel %d2,%sp@-")) or ".short" in nxt:
+                    break
+            k += 1
+        out += body
         out.append("")
 
 
