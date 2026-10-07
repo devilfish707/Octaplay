@@ -66,7 +66,8 @@ They also survive a power cycle, like CHAIN AFTER: the whole table, every
 pattern of every bank, is kept in battery-backed RAM.
 
 Copying a pattern (FUNC + REC) and pasting it (FUNC + STOP) takes its modes
-along, and undoing a paste brings the old ones back.
+along, and undoing a paste brings the old ones back. Clearing a pattern
+(FUNC + PLAY) sets all its modes back to NORMAL.
 
 Stock firmware reads the lines as comments and ignores them, so these
 projects still open on a stock OS (and lose the lines at their next save
@@ -112,8 +113,7 @@ it its own CHAIN AFTER length). This is stock behaviour.
 - Base: original OS 1.40C. Played on an MKII; the MKI shares the sequencer
   and key map layout but is untested.
 - PROJECT > NEW may keep the previous project's modes (untested).
-- Clearing a pattern keeps its modes; copying a single track does not
-  copy that track's mode.
+- Copying a single track does not copy that track's mode.
 - Does not combine with PLOCKS P2: both use the same battery RAM and the
   same pattern-copy sites (the remixer refuses the pair).
 - Composes with EUCLID and SCALE QUANTIZER by design (their stubs return

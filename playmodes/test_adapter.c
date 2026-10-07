@@ -27,6 +27,7 @@ unsigned pm_project_format(char *out, unsigned index);
 void pm_project_begin(unsigned storing);
 unsigned pm_project_line(const char *line, unsigned parse_only);
 void pm_pattern_copy(uint32_t dst, uint32_t src, uint32_t n);
+void pm_pattern_clear(uint32_t address);
 
 /* Three regions: the bank blobs, the sequencer globals, the frame clock. */
 static uint8_t blob[2 * 0x9b340];
@@ -284,6 +285,17 @@ int main(void) {
         memset(pm_table, 0, sizeof pm_table); pm_ready = 0; pm_cur = 0;
         pm_seq_step(0, 0);
         CHECK(memcmp(before, pm_table, sizeof before) == 0, "pastes reach battery RAM");
+        /* Clear pattern: that pattern's modes back to NORMAL, only it. */
+        pm_pattern_clear(A02);              /* A02 is playing, REVERSED */
+        pm_seq_step(0, 2);
+        CHECK(pm_state.settings.global == 0 && pm_table[1][0] == 0, "cleared A02 plays NORMAL");
+        CHECK(pm_table[19][3] == PM_PINGPONG && pm_table[0][0] == PM_REVERSE, "other patterns keep theirs");
+        pm_pattern_clear(A02 + 0x50);       /* not a pattern start: nothing */
+        pm_pattern_clear(CLIP);
+        CHECK(pm_clip[0] == PM_REVERSE, "the clipboard is not a pattern to clear");
+        memset(pm_table, 0, sizeof pm_table); pm_ready = 0; pm_cur = 0;
+        pm_seq_step(0, 0);
+        CHECK(pm_table[1][0] == 0 && pm_table[0][0] == PM_REVERSE, "the clear reaches battery RAM");
         set_playing(0, 0);
         pm_project_begin(1);
     }

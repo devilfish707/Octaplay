@@ -335,6 +335,22 @@ pm_memcpy:
         lea     12(%sp),%sp
         jmp     MEMCPY
 
+| 0x4003a39c, the end of stock's clear-pattern loop (every track of the
+| pattern at [0x46c82456] + d6 reset to length 16 / scale 1X): the
+| pattern's modes go back to NORMAL. Displaced: jsr %pc@(0x400339d8) (4,
+| PC-relative, replayed absolute) ; moveq #-1,%d0 (2). d0/d1/a0/a1 are free
+| (the call that follows clobbers them).
+        .global pm_clear_pattern
+pm_clear_pattern:
+        move.l  0x46c82456,%d0          | the bank's RAM
+        add.l   %d6,%d0                 | + the pattern's offset
+        move.l  %d0,-(%sp)
+        jsr     pm_pattern_clear
+        addq.l  #4,%sp
+        jsr     0x400339d8              | displaced
+        moveq   #-1,%d0                 | displaced
+        jmp     0x4003a3a2
+
 | Explicitly initialised, loader-owned DRAM (as EUCLID's state), not the
 | 0x80006a40 scratch block, which the live DSP path overwrites. The C's
 | _Static_asserts pin the sizes.

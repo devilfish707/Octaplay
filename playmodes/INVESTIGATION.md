@@ -246,12 +246,18 @@ clipboard `0x460c8122` and the undo buffer `0x460bf218`; paste
 …` (read in probe 5). `pm_memcpy` sits at all 20 and acts on whole
 patterns only.
 
+Clear pattern: the loop ending at `0x4003a39c` resets each track of the
+pattern at `[0x46c82456] + d6` (audio length `+0x50` := 16, scale `+0x51`
+:= 2; MIDI `0x48f8 + t·0x8b0` := 16, `0x48f9` := 2, which also confirms the
+MIDI length at `+0x28` of its record), then calls `0x400339d8` and
+refreshes (`jmp 0x4009da20`). Detour `pm_clear_pattern` there (6: `jsr
+%pc@(0x400339d8) ; moveq #-1,%d0`).
+
 ### Still open
 
 - Whether `0x800064d0[t]` runs 0..len-1 or 1..len at the call (a REVERSED
   test with one trig on step 1 tells: it must sound on step 16).
 - Whether TRACK + UP/DOWN reaches `0x400491a0` on every screen (a page
   with its own input layer may take the arrows first).
-- MIDI per-track length offset (`+0x28`, inferred).
 - PROJECT > NEW: whether it passes through the loader. If not, a new
   project keeps the previous modes until it is saved and reloaded.

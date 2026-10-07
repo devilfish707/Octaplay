@@ -1,8 +1,7 @@
 /* PLAY MODES -- the firmware side: reads the sequencer's own state, keeps
  * the engine's state in loader-owned DRAM and the modes in battery RAM,
  * reads and writes the project file's line, and is what the detours call.
- * Every address is cited here or in INVESTIGATION.md; MIDI_LENGTH is still
- * inferred.
+ * Every address is cited here or in INVESTIGATION.md.
  *
  * Compiled with -DPM_HOST, the firmware addresses become an array so the
  * glue can be tested on the host (test_adapter.c). */
@@ -36,9 +35,8 @@ enum {
     TRK_LENGTH     = 0x50u,       /* audio track length in PER TRACK (euclid)      */
     TRK_SCALE      = 0x51u,       /* audio track scale index in PER TRACK (euclid) */
     MIDI_SCALE     = 0x29u,       /* MIDI track scale (Kyoti NOTES, "+0x48f9")    */
-    MIDI_LENGTH    = 0x28u,       /* PENDING: inferred from the MIDI scale byte at
-                                     +0x29 (Kyoti NOTES, "+0x48f9"), audio's
-                                     length sits one byte below its scale        */
+    MIDI_LENGTH    = 0x28u,       /* stock's clear-pattern loop writes 16 here and
+                                     2 to +0x29 (probe 5, 0x4003a350)          */
     UI_FRAME_CLOCK = 0x46104cf0u, /* free-running; entropy only (euclid)          */
     NV_BASE        = 0x100f8600u, /* battery RAM: 'PMNV', 256 rows x 9 bytes, a
                                      16-bit sum: to 0x100f8f06. Stock references
@@ -432,4 +430,16 @@ void pm_pattern_copy(uint32_t dst, uint32_t src, uint32_t n) {
         pm_nv_row((unsigned)(to - pm_table[0]) / PM_SLOTS);
         pm_cur = 0;                     /* the playing pattern re-reads its row */
     }
+}
+
+/* Clear pattern: stock's clear loop resets every track of the pattern at
+ * bank pointer + d6, then refreshes (0x4003a39c..). hooks.s calls this there
+ * with that pattern's address: its modes go back to NORMAL. */
+void pm_pattern_clear(uint32_t address) {
+    pm_ensure();
+    uint8_t *row = pattern_row(address);
+    if (!row || row == pm_clip || row == pm_undo) return;
+    for (unsigned i = 0; i < PM_SLOTS; ++i) row[i] = PM_NORMAL;
+    pm_nv_row((unsigned)(row - pm_table[0]) / PM_SLOTS);
+    pm_cur = 0;
 }

@@ -41,6 +41,8 @@ What the host suites cover:
 - Pattern copy / paste / undo through the memcpy hook: the clipboard and
   undo rows, the battery copy ignored, track copies and odd addresses left
   alone, the playing pattern picking up a paste.
+- Clear pattern: only that pattern back to NORMAL, the playing one at once,
+  the clipboard and odd addresses left alone, the clear in battery RAM.
 
 ## Hardware (author's MKII, 3 Oct 2026)
 
@@ -57,7 +59,8 @@ Test images `playmodes-test`, builds 12–16, on 1.40C with stock effects.
 | 17 | Modes saved with the project (one set for all patterns). Found: the set was shared by every pattern: A01 REVERSED, A02 changed, back on A01 it played A02's mode (as designed then). |
 
 Next build (18): per-pattern modes, their project lines, the whole table
-in battery RAM, pattern copy / paste / undo; the MASTER LENGTH cut.
+in battery RAM, pattern copy / paste / undo, clear pattern; the MASTER
+LENGTH cut.
 
 ## Not yet
 

@@ -31,6 +31,7 @@ project save are not yet played (build 17). Not stress-tested (TESTING.md).
   0x400888b2  project writer: one such line per pattern that is not all
               NORMAL (project.work; SAVE copies it to project.strd)
   20 memcpy sites (0x400267e8 .. 0x4003e036): pattern copy, paste, undo
+  0x4003a39c  the end of the clear-pattern loop: the modes back to NORMAL
 
 EUCLID owns 0x4009c3d4 / 0x4009c4d4 (the PLAYING stores); its PLAY stub
 returns to 0x4009c3da, this module's site, so the two compose. Pattern
@@ -46,6 +47,7 @@ this module's three sites, so the two compose.
 from remix.schema import Category, Proof, Detour, Kind, Linked, Module, Gate
 from remix.stock_guard import stock_guard
 
+CLEAR = "clear pattern: its play modes back to NORMAL"
 MEMCPY = ("a memcpy site that moves patterns between the banks, the clipboard and the undo "
           "buffer (PLOCKS P2's list): the pattern's play modes go along")
 
@@ -128,6 +130,8 @@ MODULE = Module(
                "playmodes", "pm_memcpy", MEMCPY, kind="lea"),
         Detour(0x4003e036, stock_guard(0x4003e036, 6, "d0a149833f752655be529f2b288ab51bc7b478c59b543efff056a9e226cb1127"),
                "playmodes", "pm_memcpy", MEMCPY, kind="lea"),
+        Detour(0x4003a39c, stock_guard(0x4003a39c, 6, "e6a54fce7e5d59ad5b91e8bdf463dd39f7ec815dafe9849a9b4e35b95157de61"),
+               "playmodes", "pm_clear_pattern", CLEAR, kind="jmp"),
     ),
     conflicts=(("PLOCKS P2", "both claim the battery RAM 0x100f8600.. and the pattern memcpy sites"),),
     gates=(Gate("modules/playmodes/verify.py", remix_arg=False),),
