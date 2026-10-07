@@ -2,7 +2,7 @@
 
 OS 1.40C, ColdFire side. Sections 1-3 come from published sources, cited per
 row. Section 4 was read from the owner's original 1.40C with
-`investigate.py` (3 Oct 2026); only addresses and conclusions are kept
+`investigate.py` ([Octaplay](https://github.com/devilfish707/Octaplay), 3–7 Oct 2026); only addresses and conclusions are kept
 here, never the listings. ✅ = measured
 by the cited author (emulator or unit), 📖 = read from code by them, ❓ =
 inferred, unconfirmed.
@@ -100,7 +100,7 @@ EUCLID (`../../octabam/modules/euclid/control.c`).
 ### Step 1: static read (your machine, a few seconds)
 
 ```sh
-python3 sdk/drafts/playmodes/investigate.py --os <path>/section_3_MAIN_OS.bin
+python3 playmodes/investigate.py --os <path>/section_3_MAIN_OS.bin
 ```
 
 It checks the file is the original 1.40C main OS, disassembles the ranges in
