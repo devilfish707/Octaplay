@@ -40,13 +40,13 @@ enum {
                                      +0x29 (Kyoti NOTES, "+0x48f9"), audio's
                                      length sits one byte below its scale        */
     UI_FRAME_CLOCK = 0x46104cf0u, /* free-running; entropy only (euclid)          */
-    NV_A           = 0x100ffe00u, /* battery RAM, 256 bytes to 0x100fff00 and   */
-    NV_A_LEN       = 0x100u,
-    NV_B           = 0x100f859cu, /* 100 bytes to 0x100f8600: stock references
+    NV_BASE        = 0x100f8600u, /* battery RAM: 'PMNV', 256 rows x 9 bytes, a
+                                     16-bit sum: to 0x100f8f06. Stock references
                                      nothing in 0x100f859c..0x100fff00
-                                     (STEP_LOCKS.md 6); PLOCKS P2 holds
-                                     0x100f8600..0x100ffe00                     */
-    NV_B_LEN       = 0x64u,
+                                     (STEP_LOCKS.md 6); PLOCKS P2 uses this
+                                     range, so the two do not combine (manifest) */
+    CLIPBOARD      = 0x460c8122u, /* stock's pattern clipboard (PLOCKS P2)        */
+    UNDO_BUFFER    = 0x460bf218u, /* stock's undo buffer (PLOCKS P2)              */
 
 };
 
@@ -114,11 +114,14 @@ unsigned pm_track_length(unsigned track) {
  * works on pm_state.settings, a copy of the playing pattern's row: copied in
  * when the playing pattern changes, written back when a key changes it.
  * (The pattern record itself has no room the bank file keeps: the bank
- * serializer 0x4008a6fc writes only 0x8e50..0x8e5b of its tail; probe 5.) */
+ * serializer 0x4008a6fc writes only 0x8e50..0x8e5b of its tail; probe 5.)
+ * pm_clip / pm_undo are the rows that travel with stock's clipboard and
+ * undo buffer. */
 #define PM_SLOTS (1 + PM_TRACKS)
 #define PM_PATTERNS 256
 extern uint8_t pm_table[PM_PATTERNS][PM_SLOTS];
 extern uint16_t pm_cur;          /* the row in pm_state.settings, + 1; 0 = none */
+extern uint8_t pm_clip[PM_SLOTS], pm_undo[PM_SLOTS];
 
 static uint8_t *mode_slot(unsigned i) {
     return i ? &pm_state.settings.track[i - 1] : &pm_state.settings.global;
@@ -132,86 +135,67 @@ static unsigned row_is_normal(const uint8_t *row) {
 /* --- over a power-off: battery RAM ------------------------------------------
  * A power cycle reads no project file: the unit comes back from battery RAM
  * (CS1 0x10000000..; a cold boot clears it), as stock CHAIN AFTER does
- * (the quantizer README, "Where the setting lives"). The table does not fit
- * the free bytes, so only the patterns with a mode other than NORMAL are
- * kept, in 356 bytes over two free ranges read as one stream:
- *   'P' 'M' len_hi len_lo sum, then per pattern: its index (bank << 4 |
- *   pattern), a 17-bit mask of the slots not NORMAL (3 bytes, big-endian)
- *   and 3 bits per such slot, packed from the top bit.
- * Simple patterns take 5 bytes (about 70 fit), fully per-track ones 11
- * (about 30). Patterns beyond that are dropped from this copy (not from the
- * table or the project file); a bad header reads as all NORMAL. */
-#define NV_LEN (NV_A_LEN + NV_B_LEN)
-#define NV_HEAD 5
-static volatile uint8_t *nv_byte(unsigned i) {
-    return i < NV_A_LEN ? ADDR(NV_A + i) : ADDR(NV_B + (i - NV_A_LEN));
+ * (the quantizer README, "Where the setting lives"). The whole table is
+ * kept there, every pattern of every bank: 'P' 'M' 'N' 'V', then each row's
+ * 17 modes as nibbles (9 bytes, the last nibble 0), then the 16-bit sum of
+ * those 2304 bytes. A missing or damaged copy reads as all NORMAL. */
+#define NV_ROW 9
+#define NV_ROWS_AT (NV_BASE + 4)
+#define NV_SUM_AT (NV_ROWS_AT + PM_PATTERNS * NV_ROW)
+
+static uint8_t nv_row_byte(const uint8_t *row, unsigned b) {
+    unsigned hi = row[2 * b] & 15;
+    unsigned lo = 2 * b + 1 < PM_SLOTS ? row[2 * b + 1] & 15 : 0;
+    return (uint8_t)(hi << 4 | lo);
 }
 
-static void nv_put(unsigned i, uint8_t v) {
-    if (*nv_byte(i) != v) *nv_byte(i) = v;
+static unsigned nv_sum(void) { return (unsigned)U8(NV_SUM_AT) << 8 | U8(NV_SUM_AT + 1); }
+
+static void nv_set_sum(unsigned sum) {
+    U8(NV_SUM_AT) = (uint8_t)(sum >> 8);
+    U8(NV_SUM_AT + 1) = (uint8_t)sum;
 }
 
-static void pm_nv_store(void) {
-    unsigned at = NV_HEAD, sum = 0;
-    for (unsigned p = 0; p < PM_PATTERNS; ++p) {
-        const uint8_t *row = pm_table[p];
-        if (row_is_normal(row)) continue;
-        uint32_t mask = 0;
-        unsigned count = 0;
-        for (unsigned i = 0; i < PM_SLOTS; ++i)
-            if (row[i]) { mask |= 1u << i; ++count; }
-        unsigned size = 4 + (3 * count + 7) / 8;
-        if (at + size > NV_LEN) continue;            /* full: try smaller ones */
-        uint8_t entry[4 + 7] = {0};
-        entry[0] = (uint8_t)p;
-        entry[1] = (uint8_t)(mask >> 16);
-        entry[2] = (uint8_t)(mask >> 8);
-        entry[3] = (uint8_t)mask;
-        unsigned bit = 0;
-        for (unsigned i = 0; i < PM_SLOTS; ++i) {
-            if (!row[i]) continue;
-            for (unsigned b = 0; b < 3; ++b, ++bit)
-                if (row[i] & (4u >> b)) entry[4 + bit / 8] |= (uint8_t)(0x80u >> (bit % 8));
-        }
-        for (unsigned k = 0; k < size; ++k) { nv_put(at + k, entry[k]); sum += entry[k]; }
-        at += size;
+/* One row into the copy, the sum kept up to date byte by byte. */
+static void pm_nv_row(unsigned p) {
+    unsigned sum = nv_sum();
+    for (unsigned b = 0; b < NV_ROW; ++b) {
+        uint8_t v = nv_row_byte(pm_table[p], b), old = U8(NV_ROWS_AT + p * NV_ROW + b);
+        if (v == old) continue;
+        sum = sum - old + v;
+        U8(NV_ROWS_AT + p * NV_ROW + b) = v;
     }
-    unsigned len = at - NV_HEAD;
-    nv_put(2, (uint8_t)(len >> 8));
-    nv_put(3, (uint8_t)len);
-    nv_put(4, (uint8_t)sum);
-    nv_put(0, 'P');
-    nv_put(1, 'M');
+    nv_set_sum(sum & 0xffff);
 }
 
-static void pm_nv_load(void) {
+/* The whole table: written in full, then marked valid. */
+static void pm_nv_store(void) {
+    unsigned sum = 0;
+    for (unsigned p = 0; p < PM_PATTERNS; ++p)
+        for (unsigned b = 0; b < NV_ROW; ++b) {
+            uint8_t v = nv_row_byte(pm_table[p], b);
+            if (U8(NV_ROWS_AT + p * NV_ROW + b) != v) U8(NV_ROWS_AT + p * NV_ROW + b) = v;
+            sum += v;
+        }
+    nv_set_sum(sum & 0xffff);
+    U8(NV_BASE) = 'P'; U8(NV_BASE + 1) = 'M'; U8(NV_BASE + 2) = 'N'; U8(NV_BASE + 3) = 'V';
+}
+
+static unsigned pm_nv_load(void) {
     for (unsigned p = 0; p < PM_PATTERNS; ++p)
         for (unsigned i = 0; i < PM_SLOTS; ++i) pm_table[p][i] = PM_NORMAL;
-    if (*nv_byte(0) != 'P' || *nv_byte(1) != 'M') return;
-    unsigned len = (unsigned)*nv_byte(2) << 8 | *nv_byte(3);
-    if (len > NV_LEN - NV_HEAD) return;
+    if (U8(NV_BASE) != 'P' || U8(NV_BASE + 1) != 'M' || U8(NV_BASE + 2) != 'N'
+        || U8(NV_BASE + 3) != 'V')
+        return 0;
     unsigned sum = 0;
-    for (unsigned k = 0; k < len; ++k) sum += *nv_byte(NV_HEAD + k);
-    if ((uint8_t)sum != *nv_byte(4)) return;
-    unsigned at = NV_HEAD, end = NV_HEAD + len;
-    while (at + 4 <= end) {
-        unsigned p = *nv_byte(at);
-        uint32_t mask = (uint32_t)*nv_byte(at + 1) << 16 | (uint32_t)*nv_byte(at + 2) << 8
-                      | *nv_byte(at + 3);
-        unsigned count = 0;
-        for (unsigned i = 0; i < PM_SLOTS; ++i) count += (mask >> i) & 1;
-        unsigned size = 4 + (3 * count + 7) / 8;
-        if (mask >> PM_SLOTS || at + size > end) break;     /* damaged: stop */
-        unsigned bit = 0;
+    for (unsigned k = 0; k < PM_PATTERNS * NV_ROW; ++k) sum += U8(NV_ROWS_AT + k);
+    if ((sum & 0xffff) != nv_sum()) return 0;
+    for (unsigned p = 0; p < PM_PATTERNS; ++p)
         for (unsigned i = 0; i < PM_SLOTS; ++i) {
-            if (!((mask >> i) & 1)) continue;
-            unsigned v = 0;
-            for (unsigned b = 0; b < 3; ++b, ++bit)
-                v = v << 1 | ((*nv_byte(at + 4 + bit / 8) >> (7 - bit % 8)) & 1);
+            unsigned v = (U8(NV_ROWS_AT + p * NV_ROW + i / 2) >> (i & 1 ? 0 : 4)) & 15;
             pm_table[p][i] = (uint8_t)(v < PM_MODES ? v : PM_NORMAL);
         }
-        at += size;
-    }
+    return 1;
 }
 
 /* The playing pattern's row into pm_state.settings, when it changed. */
@@ -228,13 +212,13 @@ static void pm_load_current(void) {
 static void pm_store_current(void) {
     if (!pm_cur) return;
     for (unsigned i = 0; i < PM_SLOTS; ++i) pm_table[pm_cur - 1][i] = *mode_slot(i);
-    pm_nv_store();
+    pm_nv_row(pm_cur - 1u);
 }
 
 static void pm_ensure(void) {
     if (!pm_ready) {
         pm_init(&pm_state, U32(UI_FRAME_CLOCK));
-        pm_nv_load();
+        if (!pm_nv_load()) pm_nv_store();   /* none yet (cold boot): start one */
         pm_cur = 0;
         pm_ready = 1;
     }
@@ -403,7 +387,11 @@ unsigned pm_project_line(const char *line, unsigned parse_only) {
         unsigned ones = (unsigned)(unsigned char)p[2] - '0';
         unsigned pattern = tens * 10 + ones;
         if (tens > 9 || ones > 9 || pattern < 1 || pattern > 16 || p[3] != ':') return 1;
-        parse_digits(p + 4, pm_table[(unsigned)(p[0] - 'A') * 16 + pattern - 1]);
+        unsigned row = (unsigned)(p[0] - 'A') * 16 + pattern - 1;
+        parse_digits(p + 4, pm_table[row]);
+        pm_nv_row(row);
+        pm_cur = 0;
+        return 1;
     } else {                            /* build 17: one set for every pattern */
         uint8_t row[PM_SLOTS] = {0};
         parse_digits(p, row);
@@ -413,4 +401,35 @@ unsigned pm_project_line(const char *line, unsigned parse_only) {
     pm_cur = 0;                         /* the playing pattern re-reads its row */
     pm_nv_store();
     return 1;
+}
+
+/* --- pattern copy, paste and undo ------------------------------------------
+ * Stock moves whole patterns (0x8ed8 bytes) with memcpy 0x40020898 between
+ * the bank RAM, its clipboard and its undo buffer: copy (0x40026ece), the
+ * undo snapshot before a paste (0x40026f5e), paste and undo (0x4002b9b0's
+ * two calls: the pattern, then its battery copy). hooks.s routes those
+ * sites here before the stock memcpy, so a pattern's modes go where its
+ * data goes. (PLOCKS P2 found and hooks the same sites.) */
+static uint8_t *pattern_row(uint32_t address) {
+    if (address == CLIPBOARD) return pm_clip;
+    if (address == UNDO_BUFFER) return pm_undo;
+    if (address < BANK_BLOB) return 0;
+    uint32_t off = address - BANK_BLOB;
+    unsigned bank = off / BANK_STRIDE;
+    uint32_t in_bank = off % BANK_STRIDE;
+    if (bank > 15 || in_bank >= 16 * PATTERN_STRIDE || in_bank % PATTERN_STRIDE) return 0;
+    return pm_table[bank * 16 + in_bank / PATTERN_STRIDE];
+}
+
+void pm_pattern_copy(uint32_t dst, uint32_t src, uint32_t n) {
+    if (n != PATTERN_STRIDE) return;
+    pm_ensure();
+    uint8_t *from = pattern_row(src), *to = pattern_row(dst);
+    if (!from || !to || from == to) return;
+    if (pm_cur && from == pm_table[pm_cur - 1]) pm_store_current();
+    for (unsigned i = 0; i < PM_SLOTS; ++i) to[i] = from[i];
+    if (to != pm_clip && to != pm_undo) {
+        pm_nv_row((unsigned)(to - pm_table[0]) / PM_SLOTS);
+        pm_cur = 0;                     /* the playing pattern re-reads its row */
+    }
 }

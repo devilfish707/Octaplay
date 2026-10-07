@@ -220,9 +220,9 @@ battery RAM. Read here from 1.40C:
   reach the file whenever the writer runs. `0x100f8598` (set before
   `0x40027e00` at 461 sites) is the pattern-edit path, not needed here.
 - Battery RAM: stock references nothing in `0x100f859c..0x100fff00`
-  (STEP_LOCKS.md section 6); PLOCKS P2 holds `0x100f8600..0x100ffe00`. The
-  modes' power-off copy takes the two ends, `0x100ffe00..0x100fff00` and
-  `0x100f859c..0x100f8600` (build 17 used `0x100b14e2..ea`, no longer).
+  (STEP_LOCKS.md section 6). The whole table (4 + 256 x 9 + 2 bytes) sits
+  at `0x100f8600..0x100f8f06`, which PLOCKS P2 also uses: the manifest
+  declares the conflict. (Build 17 used `0x100b14e2..ea`, no longer.)
 
 ### The pattern record and the bank file (round 5, 7 Oct 2026)
 
@@ -237,6 +237,14 @@ every track byte is in use. Pattern paste (`0x4002b9b0`) copies all
 `0x8ed8` bytes and its battery copy; the current bank's battery copy
 (`0x4000faf0` / `0x4000fbb4`) is `0x8ed80` bytes. The modes therefore live
 in a table of their own (256 rows), in the project file and in battery RAM.
+
+Pattern copy / paste / undo: the 20 memcpy `0x40020898` sites PLOCKS P2
+lists (11 `jsr`, 9 `lea abs,An` whose register two `jsr`s then use) move
+patterns (`0x8ed8`) and tracks (`0x91a`) between the bank RAM, the
+clipboard `0x460c8122` and the undo buffer `0x460bf218`; paste
+`0x4002b9b0` copies to the pattern and then its battery copy `0x1001614e +
+…` (read in probe 5). `pm_memcpy` sits at all 20 and acts on whole
+patterns only.
 
 ### Still open
 

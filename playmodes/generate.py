@@ -26,7 +26,7 @@ SOURCES = ('playmode.c', 'adapter.c')
 # invented, a mistyped return address) fails the build.
 STOCK_CALLS = {'NOTIFY', 'REBUILD', '0x4009b2be', '0x40040256', '0x400491a6', '0x4009dc8c', '0x4009e3e2',
                '0x400a2d74', '0x400a39be', '0x4009c3e0', '0x400a2216', '0x400a24dc', '0x400a27ee',
-               'WRITE', '0x400866da', '0x400867b0', '0x40088224', '0x400888b8'}
+               'WRITE', 'MEMCPY', '0x400866da', '0x400867b0', '0x40088224', '0x400888b8'}
 
 
 def compiler():

@@ -62,10 +62,11 @@ on stock firmware) loads as all NORMAL. Build 17's single line is read as
 every pattern's. Only the modes are saved: every track still starts from
 its first step.
 
-They also survive a power cycle, like CHAIN AFTER, in battery-backed RAM.
-That space is small: about 70 patterns with one mode set, or about 30 with
-every track set, fit there. Patterns beyond that still play and save, but
-lose their modes at a power-off (load the saved project to get them back).
+They also survive a power cycle, like CHAIN AFTER: the whole table, every
+pattern of every bank, is kept in battery-backed RAM.
+
+Copying a pattern (FUNC + REC) and pasting it (FUNC + STOP) takes its modes
+along, and undoing a paste brings the old ones back.
 
 Stock firmware reads the lines as comments and ignores them, so these
 projects still open on a stock OS (and lose the lines at their next save
@@ -111,7 +112,10 @@ it its own CHAIN AFTER length). This is stock behaviour.
 - Base: original OS 1.40C. Played on an MKII; the MKI shares the sequencer
   and key map layout but is untested.
 - PROJECT > NEW may keep the previous project's modes (untested).
-- Copying a pattern (or clearing one) does not copy (or clear) its modes.
+- Clearing a pattern keeps its modes; copying a single track does not
+  copy that track's mode.
+- Does not combine with PLOCKS P2: both use the same battery RAM and the
+  same pattern-copy sites (the remixer refuses the pair).
 - Composes with EUCLID and SCALE QUANTIZER by design (their stubs return
   into this module's sites). DIRECT JUMP, OCTAKIT and the KYOTI modules hook the same tick
   handler at other sites; combinations are untested.
@@ -143,7 +147,7 @@ it. Hardware results: [TESTING.md](TESTING.md).
 |---|---|
 | `playmode.h`, `playmode.c` | the engine: pure, freestanding C |
 | `adapter.c` | firmware glue: sequencer bytes, restarts, lengths, popup text, per-pattern table, project lines, battery copy |
-| `hooks.s` | the 14 detour stubs, the register-saving entries, DRAM state |
+| `hooks.s` | the detour stubs (14 + the pattern-copy memcpy), the register-saving entries, DRAM state |
 | `generate.py` | compiles and assembles the three into the linked unit `playmodes.s` |
 | `verify.py`, `test_*.c` | host tests |
 | `manifest.py` | native declaration: the unit and its detours, each guarded by stock bytes |

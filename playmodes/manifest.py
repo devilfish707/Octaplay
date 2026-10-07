@@ -30,6 +30,7 @@ project save are not yet played (build 17). Not stress-tested (TESTING.md).
   0x400867aa  project loader '#' lines: read "#PLAY_MODES=A01:<17 digits>"
   0x400888b2  project writer: one such line per pattern that is not all
               NORMAL (project.work; SAVE copies it to project.strd)
+  20 memcpy sites (0x400267e8 .. 0x4003e036): pattern copy, paste, undo
 
 EUCLID owns 0x4009c3d4 / 0x4009c4d4 (the PLAYING stores); its PLAY stub
 returns to 0x4009c3da, this module's site, so the two compose. Pattern
@@ -37,13 +38,16 @@ switches are observed from the sequencer's own bytes. No 0x80006a40 scratch
 RAM (overwritten by the live DSP path on hardware); state is loader-owned
 DRAM (hooks.s). Every pattern of every bank has its own modes (a 256-row
 table in that DRAM), kept in the project file's "#PLAY_MODES=" lines and,
-for a power cycle (which reads no project file), sparse in battery RAM
-0x100ffe00..0x100fff00 + 0x100f859c..0x100f8600 (free; PLOCKS P2 holds the
-range between). SCALE QUANTIZER's three project-file stubs return to
+for a power cycle (which reads no project file), whole in battery RAM
+0x100f8600..0x100f8f06. Pattern copy / paste / undo carry them through the
+20 memcpy sites below. Both are PLOCKS P2's: the two do not combine. SCALE QUANTIZER's three project-file stubs return to
 this module's three sites, so the two compose.
 """
 from remix.schema import Category, Proof, Detour, Kind, Linked, Module, Gate
 from remix.stock_guard import stock_guard
+
+MEMCPY = ("a memcpy site that moves patterns between the banks, the clipboard and the undo "
+          "buffer (PLOCKS P2's list): the pattern's play modes go along")
 
 MODULE = Module(
     name="playmodes",
@@ -83,7 +87,48 @@ MODULE = Module(
         Detour(0x400867aa, stock_guard(0x400867aa, 6, "b304cfb26163106388891990b3c67d3fe0b7f927d6a9f973d8d93d26d1171259"),
                "playmodes", "pm_proj_line", "project load: read the #PLAY_MODES= line", kind="jmp"),
         Detour(0x400888b2, stock_guard(0x400888b2, 6, "b7d260815d4140a98163e14d6e541df300de70a7bfc32b99792b5e61e46235c3"),
-               "playmodes", "pm_proj_write", "project write: the #PLAY_MODES= line", kind="jmp"),
+               "playmodes", "pm_proj_write", "project write: the #PLAY_MODES= lines", kind="jmp"),
+        Detour(0x400267e8, stock_guard(0x400267e8, 6, "2632ff0358536cd6b85e363a80fd9c9e33f2f117dbfc65e8e23debdb91ddcb79"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="jsr"),
+        Detour(0x40026884, stock_guard(0x40026884, 6, "2632ff0358536cd6b85e363a80fd9c9e33f2f117dbfc65e8e23debdb91ddcb79"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="jsr"),
+        Detour(0x40026ece, stock_guard(0x40026ece, 6, "2632ff0358536cd6b85e363a80fd9c9e33f2f117dbfc65e8e23debdb91ddcb79"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="jsr"),
+        Detour(0x40026f5e, stock_guard(0x40026f5e, 6, "2632ff0358536cd6b85e363a80fd9c9e33f2f117dbfc65e8e23debdb91ddcb79"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="jsr"),
+        Detour(0x40027764, stock_guard(0x40027764, 6, "2632ff0358536cd6b85e363a80fd9c9e33f2f117dbfc65e8e23debdb91ddcb79"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="jsr"),
+        Detour(0x40027834, stock_guard(0x40027834, 6, "2632ff0358536cd6b85e363a80fd9c9e33f2f117dbfc65e8e23debdb91ddcb79"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="jsr"),
+        Detour(0x4002924c, stock_guard(0x4002924c, 6, "2632ff0358536cd6b85e363a80fd9c9e33f2f117dbfc65e8e23debdb91ddcb79"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="jsr"),
+        Detour(0x40029280, stock_guard(0x40029280, 6, "2632ff0358536cd6b85e363a80fd9c9e33f2f117dbfc65e8e23debdb91ddcb79"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="jsr"),
+        Detour(0x40029316, stock_guard(0x40029316, 6, "2632ff0358536cd6b85e363a80fd9c9e33f2f117dbfc65e8e23debdb91ddcb79"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="jsr"),
+        Detour(0x40029352, stock_guard(0x40029352, 6, "2632ff0358536cd6b85e363a80fd9c9e33f2f117dbfc65e8e23debdb91ddcb79"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="jsr"),
+        Detour(0x40029980, stock_guard(0x40029980, 6, "2632ff0358536cd6b85e363a80fd9c9e33f2f117dbfc65e8e23debdb91ddcb79"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="jsr"),
+        Detour(0x40029652, stock_guard(0x40029652, 6, "472517dfeee4535ad27f3fe660ddc0df4479234c9afe36fca3b98a107b1e943e"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="lea"),
+        Detour(0x4002978e, stock_guard(0x4002978e, 6, "472517dfeee4535ad27f3fe660ddc0df4479234c9afe36fca3b98a107b1e943e"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="lea"),
+        Detour(0x4002b370, stock_guard(0x4002b370, 6, "b0786b1427a0006718973ca0b7b4ad5daca6afa25dba733ed417e762ab02207b"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="lea"),
+        Detour(0x4002b42e, stock_guard(0x4002b42e, 6, "b0786b1427a0006718973ca0b7b4ad5daca6afa25dba733ed417e762ab02207b"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="lea"),
+        Detour(0x4002b4b2, stock_guard(0x4002b4b2, 6, "472517dfeee4535ad27f3fe660ddc0df4479234c9afe36fca3b98a107b1e943e"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="lea"),
+        Detour(0x4002b692, stock_guard(0x4002b692, 6, "472517dfeee4535ad27f3fe660ddc0df4479234c9afe36fca3b98a107b1e943e"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="lea"),
+        Detour(0x4002b9da, stock_guard(0x4002b9da, 6, "b0786b1427a0006718973ca0b7b4ad5daca6afa25dba733ed417e762ab02207b"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="lea"),
+        Detour(0x4003de14, stock_guard(0x4003de14, 6, "d0a149833f752655be529f2b288ab51bc7b478c59b543efff056a9e226cb1127"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="lea"),
+        Detour(0x4003e036, stock_guard(0x4003e036, 6, "d0a149833f752655be529f2b288ab51bc7b478c59b543efff056a9e226cb1127"),
+               "playmodes", "pm_memcpy", MEMCPY, kind="lea"),
     ),
+    conflicts=(("PLOCKS P2", "both claim the battery RAM 0x100f8600.. and the pattern memcpy sites"),),
     gates=(Gate("modules/playmodes/verify.py", remix_arg=False),),
 )

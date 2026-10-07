@@ -318,13 +318,30 @@ pm_proj_write:
         pea     0x400b8244              | displaced
         jmp     0x400888b8
 
+| ---- pattern copy, paste and undo -----------------------------------------
+| memcpy(dst, src, n) at the stock sites that move whole patterns between
+| the bank RAM, the clipboard and the undo buffer (PLOCKS P2 found them):
+| jsr sites call this instead of 0x40020898, lea sites load it into the
+| register that their two jsr calls use. pm_pattern_copy moves the
+| pattern's modes along; then the stock memcpy runs in the caller's frame
+| as it was. memcpy may clobber d0/d1/a0/a1, so the C call may too.
+        .global pm_memcpy
+        .equ    MEMCPY, 0x40020898
+pm_memcpy:
+        move.l  12(%sp),-(%sp)          | n
+        move.l  12(%sp),-(%sp)          | src (shifted by one push)
+        move.l  12(%sp),-(%sp)          | dst (shifted by two)
+        jsr     pm_pattern_copy
+        lea     12(%sp),%sp
+        jmp     MEMCPY
+
 | Explicitly initialised, loader-owned DRAM (as EUCLID's state), not the
 | 0x80006a40 scratch block, which the live DSP path overwrites. The C's
 | _Static_asserts pin the sizes.
         .balign 4
         .global pm_state, pm_ready, pm_last_transport, pm_last_bank
         .global pm_last_pattern, pm_toast, pm_held_track, pm_restart, pm_line
-        .global pm_table, pm_cur
+        .global pm_table, pm_cur, pm_clip, pm_undo
 pm_state:
         .zero   224
 pm_ready:
@@ -348,3 +365,8 @@ pm_cur:
         .balign 4
 pm_table:
         .zero   4352                    | 256 patterns x 17 modes (bank * 16 + pattern)
+pm_clip:
+        .zero   17                      | the modes of the pattern in stock's clipboard
+pm_undo:
+        .zero   17                      | ... and in its undo buffer
+        .balign 4

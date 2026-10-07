@@ -15,6 +15,7 @@ uint32_t pm_restart;
 char pm_toast[16];
 uint8_t pm_table[256][17];
 uint16_t pm_cur;
+uint8_t pm_clip[17], pm_undo[17];
 
 unsigned pm_seq_step(unsigned track, unsigned raw);
 unsigned pm_seq_peek(unsigned track, unsigned raw);
@@ -25,18 +26,18 @@ unsigned pm_show(unsigned track, unsigned raw);
 unsigned pm_project_format(char *out, unsigned index);
 void pm_project_begin(unsigned storing);
 unsigned pm_project_line(const char *line, unsigned parse_only);
+void pm_pattern_copy(uint32_t dst, uint32_t src, uint32_t n);
 
 /* Three regions: the bank blobs, the sequencer globals, the frame clock. */
 static uint8_t blob[2 * 0x9b340];
 static uint8_t seq[0x200];
 static uint8_t clock_ram[16];
-static uint8_t nv_a[0x100], nv_b[0x64];   /* battery RAM 0x100ffe00.., 0x100f859c.. */
+static uint8_t nv[0x910];             /* battery RAM 0x100f8600.. */
 
 volatile uint8_t *pm_host_addr(uint32_t a) {
     if (a >= 0x400e21e0u && a < 0x400e21e0u + sizeof blob) return blob + (a - 0x400e21e0u);
     if (a >= 0x80006500u && a < 0x80006500u + sizeof seq) return seq + (a - 0x80006500u);
-    if (a >= 0x100ffe00u && a < 0x100fff00u) return nv_a + (a - 0x100ffe00u);
-    if (a >= 0x100f859cu && a < 0x100f8600u) return nv_b + (a - 0x100f859cu);
+    if (a >= 0x100f8600u && a < 0x100f8f06u) return nv + (a - 0x100f8600u);
     if (a >= 0x46104cf0u && a < 0x46104cf0u + sizeof clock_ram) return clock_ram + (a - 0x46104cf0u);
     printf("FAIL: adapter read an unexpected address 0x%08x\n", a);
     ++failures;
@@ -229,33 +230,61 @@ int main(void) {
         CHECK(memcmp(before, pm_table, sizeof before) == 0, "the table after a power cycle");
         CHECK(pm_state.settings.global == PM_REVERSE, "A01 plays REVERSED after the power cycle");
 
-        /* A damaged copy reads as all NORMAL. */
-        nv_a[7] ^= 0x40;
+        /* A damaged copy reads as all NORMAL (and a new copy is started). */
+        nv[40] ^= 0x40;
         memset(pm_table, 0, sizeof pm_table); pm_ready = 0; pm_cur = 0;
         pm_seq_step(0, 0);
         unsigned any = 0;
         for (unsigned i = 0; i < 256; ++i) for (unsigned k = 0; k < 17; ++k) any |= pm_table[i][k];
         CHECK(!any, "a bad checksum: all NORMAL");
+        CHECK(nv[0] == 'P' && nv[3] == 'V', "a fresh copy is marked");
 
-        /* Capacity: 70 single-mode patterns fit, the rest are left out of
-         * the battery copy only; full rows: about 30. Nothing is written
-         * outside the two ranges (the host map would fail the read). */
+        /* Every pattern fits: all 256 full rows survive a power cycle. */
         pm_project_begin(1);
-        for (unsigned i = 0; i < 256; ++i) pm_table[i][0] = PM_SHUFFLE;
-        pm_project_line("#PLAY_MODES=A01:4", 0);   /* stores the battery copy */
+        char l2[48];
+        for (unsigned i = 0; i < 256; ++i) {
+            unsigned n = (unsigned)snprintf(l2, sizeof l2, "#PLAY_MODES=%c%02u:", 'A' + i / 16, i % 16 + 1);
+            for (unsigned k = 0; k < 17; ++k) l2[n++] = (char)('0' + (i + k) % 5);
+            l2[n] = 0;
+            pm_project_line(l2, 0);
+        }
+        memcpy(before, pm_table, sizeof before);
         memset(pm_table, 0, sizeof pm_table); pm_ready = 0; pm_cur = 0;
         pm_seq_step(0, 0);
-        unsigned kept = 0;
-        for (unsigned i = 0; i < 256; ++i) kept += pm_table[i][0] == PM_SHUFFLE;
-        CHECK(kept == 70, "70 single-mode patterns survive (%u)", kept);
+        CHECK(memcmp(before, pm_table, sizeof before) == 0, "all 256 rows after a power cycle");
+        unsigned lines2 = 0;
+        for (unsigned i = 0; i < 256; ++i) if (pm_project_format(l2, i)) ++lines2;
+        CHECK(lines2 == 256, "and 256 project lines (%u)", lines2);
+
+        /* Copy, paste, undo: the modes go where stock's memcpy takes the
+         * pattern. Bank RAM 0x400e21e0 + bank * 0x9b340 + pattern * 0x8ed8. */
         pm_project_begin(1);
-        for (unsigned i = 0; i < 256; ++i) for (unsigned k = 0; k < 17; ++k) pm_table[i][k] = (uint8_t)(1 + k % 4);
-        pm_project_line("#PLAY_MODES=A01:12341234123412341", 0);
+        pm_project_line("#PLAY_MODES=A01:10000000000000000", 0);
+        pm_project_line("#PLAY_MODES=B04:00020000000000000", 0);
+        const uint32_t A01 = 0x400e21e0u, B04 = 0x400e21e0u + 0x9b340u + 3 * 0x8ed8u,
+                       A02 = 0x400e21e0u + 0x8ed8u, CLIP = 0x460c8122u, UNDO = 0x460bf218u;
+        pm_pattern_copy(CLIP, A01, 0x8ed8);                 /* copy A01 */
+        CHECK(pm_clip[0] == PM_REVERSE, "the clipboard holds A01's modes");
+        pm_pattern_copy(UNDO, B04, 0x8ed8);                 /* paste on B04: undo snapshot */
+        pm_pattern_copy(B04, CLIP, 0x8ed8);                 /* ... the paste */
+        pm_pattern_copy(0x1001614eu + 3 * 0x8ed8u, CLIP, 0x8ed8);   /* its battery copy: ignored */
+        CHECK(pm_table[19][0] == PM_REVERSE && pm_table[19][3] == 0, "B04 now has A01's modes");
+        CHECK(pm_undo[3] == PM_PINGPONG, "the undo buffer kept B04's");
+        pm_pattern_copy(B04, UNDO, 0x8ed8);                 /* undo */
+        CHECK(pm_table[19][3] == PM_PINGPONG && pm_table[19][0] == 0, "undo brings B04's back");
+        pm_pattern_copy(A02, A01, 0x91a);                   /* a track copy: not a pattern */
+        pm_pattern_copy(A02 + 4, A01, 0x8ed8);              /* not a pattern start */
+        CHECK(pm_table[1][0] == 0, "other copies leave the modes alone");
+        set_playing(0, 1);                                  /* A02 playing */
+        pm_seq_step(0, 0);
+        pm_pattern_copy(A02, CLIP, 0x8ed8);                 /* paste onto the playing pattern */
+        pm_seq_step(0, 1);
+        CHECK(pm_state.settings.global == PM_REVERSE, "the playing pattern plays the pasted modes");
+        memcpy(before, pm_table, sizeof before);
         memset(pm_table, 0, sizeof pm_table); pm_ready = 0; pm_cur = 0;
         pm_seq_step(0, 0);
-        kept = 0;
-        for (unsigned i = 0; i < 256; ++i) kept += pm_table[i][16] == 1;
-        CHECK(kept == 31, "31 full rows survive (%u)", kept);
+        CHECK(memcmp(before, pm_table, sizeof before) == 0, "pastes reach battery RAM");
+        set_playing(0, 0);
         pm_project_begin(1);
     }
 

@@ -32,7 +32,8 @@ Flashing modified firmware is at your own risk.
 - PLAY and pattern changes start every track from its first step again.
 - Every pattern keeps its own modes. They are saved with the project
   (`#PLAY_MODES=` lines in `project.work`, carried to `project.strd` by
-  SAVE) and survive a power cycle.
+  SAVE), survive a power cycle and go along with pattern copy / paste.
+  (Not combinable with PLOCKS P2.)
 
 Full description, controls and limitations: [playmodes/README.md](playmodes/README.md).
 
@@ -68,9 +69,9 @@ The stock sequencer keeps counting its steps; Octaplay replaces the step
 number at the two places the sequencer turns it into "play this step"
 (audio and MIDI), at the rebuild that runs after edits, and at the UI's
 "which step is this track on" query. Three more detours read and write the
-project file's line. Every answer is a pure function of
+project file's lines, and twenty pattern-copy sites carry the modes along. Every answer is a pure function of
 (mode, length, pass, step, seed), so look-ahead readers and what the
-sequencer prepares while stopped agree with what then plays. Fourteen
+sequencer prepares while stopped agree with what then plays. Thirty-four
 guarded detours in total; each refuses to build if the stock bytes at its
 site differ. Details and every address with its source:
 [playmodes/INVESTIGATION.md](playmodes/INVESTIGATION.md).
