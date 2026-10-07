@@ -24,7 +24,12 @@ image=$(docker image inspect modwerk-source-tools --format '{{.Id}}')
 
 # 2. packages from this clean commit, imported
 rm -rf "$OUT"
-bash scripts/build-modules-isolated.sh . "$OUT" "$image"
+# macOS mktemp ignores TMPDIR here, so run a copy whose staging folder is
+# under home (the checkout must stay clean, so the copy lives outside it).
+sed 's#staging_dir=$(mktemp -d)#staging_dir=$(mktemp -d "$TMPDIR/stage.XXXXXX")#' \
+  scripts/build-modules-isolated.sh > "$TMPDIR/build-modules-isolated.sh"
+grep -q 'stage.XXXXXX' "$TMPDIR/build-modules-isolated.sh" || { echo "could not patch the staging folder"; exit 1; }
+bash "$TMPDIR/build-modules-isolated.sh" . "$OUT" "$image"
 npm run modules:import -- "$OUT/packages" --development
 npm run modules:generate
 
