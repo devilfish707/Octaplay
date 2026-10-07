@@ -6,7 +6,7 @@ The Octatrack sequencer's playhead in five directions, shared by every track
 or set per track. ColdFire-only (no DSP code), for original OS 1.40C.
 
 **Experimental.** Built into test images and played on the author's MKII
-(builds 12–16, 3 Oct 2026); not stress-tested. See [TESTING.md](TESTING.md).
+(builds 12–16, 3 Oct 2026); the project save is not played yet. Not stress-tested. See [TESTING.md](TESTING.md).
 
 ![Play Modes thumbnail: normal, reversed, pingpong and shuffle playhead paths over 16 steps](presentation/thumbnail.svg)
 
@@ -45,6 +45,20 @@ A one-second popup shows the result: `ALL PINGPONG` under NORMAL scale mode
 (any TRACK key changes the shared mode), `T3 PINGPONG` or `M2 REVERSED`
 under PER TRACK. Default NORMAL. Changing the mode, playing or stopped,
 takes effect from the next step.
+
+## Saved with the project
+
+The modes are part of the project. They are written to `project.work` as
+one line, `#PLAY_MODES=` and 17 digits (the shared mode, T1–T8, M1–M8;
+0 NORMAL … 4 SHUFFLE), whenever the Octatrack writes the project's settings:
+PROJECT > SAVE (which copies it to `project.strd`), SYNC TO CARD, and
+PROJECT > CHANGE. Loading or reloading a project sets them from that line; a
+project without it (older, or saved on stock firmware) loads as all NORMAL.
+They also survive a power cycle, like CHAIN AFTER, in battery-backed RAM.
+Only the modes are saved: every track still starts from its first step.
+
+Stock firmware reads the line as a comment and ignores it, so these projects
+still open on a stock OS (and lose the line at their next save there).
 
 ## Usage
 
@@ -85,9 +99,9 @@ it its own CHAIN AFTER length). This is stock behaviour.
 
 - Base: original OS 1.40C. Played on an MKII; the MKI shares the sequencer
   and key map layout but is untested.
-- The mode settings are runtime only: they return to NORMAL at power-on.
-- Composes with EUCLID by design (its PLAY stub returns into this module's
-  PLAY site). DIRECT JUMP, OCTAKIT and the KYOTI modules hook the same tick
+- PROJECT > NEW may keep the previous project's modes (untested).
+- Composes with EUCLID and SCALE QUANTIZER by design (their stubs return
+  into this module's sites). DIRECT JUMP, OCTAKIT and the KYOTI modules hook the same tick
   handler at other sites; combinations are untested.
 - Swing follows the step that plays (stock reads the swing bit of the step
   it is given). Trig conditions keep counting stock passes.
@@ -107,7 +121,7 @@ local original 1.40C extraction, `python3 generate.py`, then build
 permutation every pass, random's spread, look-ahead equals what then plays,
 what is prepared while stopped equals what PLAY plays, the popup text) and
 the firmware glue (scale mode, per-track lengths, MASTER LENGTH cut, PLAY
-and pattern-switch restarts) on the host. With `m68k-elf-gcc` on the PATH it
+and pattern-switch restarts, the project line and battery RAM) on the host. With `m68k-elf-gcc` on the PATH it
 also compiles and assembles the ColdFire unit and refuses any call outside
 it. Hardware results: [TESTING.md](TESTING.md).
 
@@ -116,8 +130,8 @@ it. Hardware results: [TESTING.md](TESTING.md).
 | file | what |
 |---|---|
 | `playmode.h`, `playmode.c` | the engine: pure, freestanding C |
-| `adapter.c` | firmware glue: sequencer bytes, restarts, lengths, popup text |
-| `hooks.s` | the 11 detour stubs, the register-saving entries, DRAM state |
+| `adapter.c` | firmware glue: sequencer bytes, restarts, lengths, popup text, project line |
+| `hooks.s` | the 14 detour stubs, the register-saving entries, DRAM state |
 | `generate.py` | compiles and assembles the three into the linked unit `playmodes.s` |
 | `verify.py`, `test_*.c` | host tests |
 | `manifest.py` | native declaration: the unit and its detours, each guarded by stock bytes |

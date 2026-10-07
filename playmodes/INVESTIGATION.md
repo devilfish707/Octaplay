@@ -191,6 +191,39 @@ and lock editing, with the current track `0x80000000` (MIDI as 8 + t) or
 -1. Detour `pm_step_getter` at `0x4009b2b0` (6: `movel %sp@(4),%d0 ;
 bges`) maps both answers.
 
+### The project file (round 4, 7 Oct 2026)
+
+`project.work` is text, one `KEY=value` line per setting. SCALE QUANTIZER
+(Tim Hastie) found the loader and writer and measured how the file moves:
+SAVE writes `project.work` and copies every `.work` to its `.strd`; RELOAD
+copies `.strd` back and loads; PROJECT > CHANGE first writes the working
+state, then loads. A power cycle reads no file: the unit comes back from
+battery RAM. Read here from 1.40C:
+
+- Loader `0x400866c4(file, storing)`: `0x400866d4: movel %d0,%sp@(1158) ;
+  seq %d0` with d0 = `storing` (0 on the parse-only pass); `58(sp)` keeps
+  the inverse (nonzero = parse-only). The quantizer's entry stub at
+  `0x400866cc` returns here. Detour `pm_proj_begin`: a storing pass resets
+  the modes to NORMAL.
+- Its comment check `0x400867aa: cmpl %d0,%d5 ; beqw 0x40088224`, d5 = '#',
+  d0 = the line's first character, d3 = the line (NUL-ended, no CR LF);
+  `0x40088224` is the loop's next line. The quantizer's line stub at
+  `0x400867a2` returns here. Detour `pm_proj_line`.
+- Writer `0x400882a2`: per setting `sprintf(d2, fmt, v)` (a4), `strlen`
+  (a3), `write(d3, d2, n)` (a2 = `0x400166b8`). At `0x400888b2` (`pea
+  0x400b8244`, PATTERN_CHANGE_AUTO_SILENCE_TRACKS's format) its value is
+  already pushed; the quantizer's writer stub at `0x400888aa` returns here.
+  Detour `pm_proj_write` writes `#PLAY_MODES=<17 digits>\r\n` first.
+- No dirty flag: the CHAIN AFTER setter `0x400659ec` only stores
+  `0x8000004e` and its battery mirror `0x100b14ae`; the PERSONALIZE setter
+  `0x40068ca0` likewise (`0x800000ac`, `0x100fff3c`). Project settings
+  reach the file whenever the writer runs. `0x100f8598` (set before
+  `0x40027e00` at 461 sites) is the pattern-edit path, not needed here.
+- Battery RAM `0x100b14e2..0x100b14ef` is linker padding before the project
+  record `0x100b14f0`, with no stock reference (the quantizer's watch and
+  reference scan); the quantizer holds `0x100b14ec..ee`. The modes take
+  `0x100b14e2..ea` as nibbles.
+
 ### Still open
 
 - Whether `0x800064d0[t]` runs 0..len-1 or 1..len at the call (a REVERSED
@@ -198,3 +231,5 @@ bges`) maps both answers.
 - Whether TRACK + UP/DOWN reaches `0x400491a0` on every screen (a page
   with its own input layer may take the arrows first).
 - MIDI per-track length offset (`+0x28`, inferred).
+- PROJECT > NEW: whether it passes through the loader. If not, a new
+  project keeps the previous modes until it is saved and reloaded.

@@ -10,10 +10,11 @@ step is replaced by the engine's answer (playmode.c). Every answer is a pure
 function of (mode, length, pass, step, seed), so look-ahead readers
 (micro-timing, the tick-2 pre-check) see exactly the step that then plays.
 
-STATUS (3 Oct 2026): experimental. Engine and glue host-tested; the sites
+STATUS (7 Oct 2026): experimental. Engine and glue host-tested; the sites
 below were read from the author's original 1.40C (investigate.py,
-INVESTIGATION.md section 4) and are guarded by their stock bytes. Played on
-the author's MKII (test builds 12-16); not stress-tested (TESTING.md).
+INVESTIGATION.md sections 4 and 6) and are guarded by their stock bytes. Played on
+the author's MKII (test builds 12-16); the MASTER LENGTH cut and the
+project save are not yet played (build 17). Not stress-tested (TESTING.md).
 
   0x400a2d6a  audio tick: step = 0x800064d0[t] before 0x4009d1e8 -> mapped
   0x400a39b6  MIDI tick: step = 0x800064d8[t] before 0x4009cf4c -> mapped
@@ -25,12 +26,19 @@ the author's MKII (test builds 12-16); not stress-tested (TESTING.md).
 
   0x4009c3da, 0x400a2210, 0x400a24d6, 0x400a27e8  transport starts: restart
 
+  0x400866d4  project loader head: a storing pass starts from NORMAL
+  0x400867aa  project loader '#' lines: read "#PLAY_MODES=<17 digits>"
+  0x400888b2  project writer: print that line (project.work; SAVE copies it
+              to project.strd)
+
 EUCLID owns 0x4009c3d4 / 0x4009c4d4 (the PLAYING stores); its PLAY stub
 returns to 0x4009c3da, this module's site, so the two compose. Pattern
 switches are observed from the sequencer's own bytes. No 0x80006a40 scratch
 RAM (overwritten by the live DSP path on hardware); state is loader-owned
-DRAM (hooks.s). The mode settings are runtime-only for now: they reset to
-NORMAL at power-on (persistence is the next step, README "Roadmap").
+DRAM (hooks.s). The modes are kept in battery RAM 0x100b14e2..ea (nibbles;
+a power cycle reads no project file) and in the project file's
+"#PLAY_MODES=" line. SCALE QUANTIZER's three project-file stubs return to
+this module's three sites, so the two compose.
 """
 from remix.schema import Category, Proof, Detour, Kind, Linked, Module, Gate
 from remix.stock_guard import stock_guard
@@ -68,6 +76,12 @@ MODULE = Module(
                "playmodes", "pm_track_key", "remember which TRACK key is held", kind="jmp"),
         Detour(0x400491a0, stock_guard(0x400491a0, 6, "25f6cf58764096a92fba2355b3a003ad25d064d44e1e91102deb6abcadbed9d7"),
                "playmodes", "pm_arrow_key", "TRACK held + UP/DOWN: change the play mode", kind="jmp"),
+        Detour(0x400866d4, stock_guard(0x400866d4, 6, "2fd04d71c59a1c9023b7b2b5ad2cf5a7445d464be69c48340b45e33b9ad07056"),
+               "playmodes", "pm_proj_begin", "project load: a storing pass starts from NORMAL", kind="jmp"),
+        Detour(0x400867aa, stock_guard(0x400867aa, 6, "b304cfb26163106388891990b3c67d3fe0b7f927d6a9f973d8d93d26d1171259"),
+               "playmodes", "pm_proj_line", "project load: read the #PLAY_MODES= line", kind="jmp"),
+        Detour(0x400888b2, stock_guard(0x400888b2, 6, "b7d260815d4140a98163e14d6e541df300de70a7bfc32b99792b5e61e46235c3"),
+               "playmodes", "pm_proj_write", "project write: the #PLAY_MODES= line", kind="jmp"),
     ),
     gates=(Gate("modules/playmodes/verify.py", remix_arg=False),),
 )

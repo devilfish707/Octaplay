@@ -20,15 +20,20 @@ void pm_key_updown(unsigned track, int delta);
 static const char *key(unsigned track, int delta) { pm_key_updown(track, delta); return pm_toast; }
 unsigned pm_track_length(unsigned track);
 unsigned pm_show(unsigned track, unsigned raw);
+unsigned pm_project_format(char *out);
+void pm_project_begin(unsigned storing);
+unsigned pm_project_line(const char *line, unsigned parse_only);
 
 /* Three regions: the bank blobs, the sequencer globals, the frame clock. */
 static uint8_t blob[2 * 0x9b340];
 static uint8_t seq[0x200];
 static uint8_t clock_ram[16];
+static uint8_t nv[16];               /* battery RAM 0x100b14e0.. */
 
 volatile uint8_t *pm_host_addr(uint32_t a) {
     if (a >= 0x400e21e0u && a < 0x400e21e0u + sizeof blob) return blob + (a - 0x400e21e0u);
     if (a >= 0x80006500u && a < 0x80006500u + sizeof seq) return seq + (a - 0x80006500u);
+    if (a >= 0x100b14e2u && a < 0x100b14ebu) return nv + (a - 0x100b14e0u);
     if (a >= 0x46104cf0u && a < 0x46104cf0u + sizeof clock_ram) return clock_ram + (a - 0x46104cf0u);
     printf("FAIL: adapter read an unexpected address 0x%08x\n", a);
     ++failures;
@@ -150,6 +155,67 @@ int main(void) {
         for (unsigned r = 0; r < 16; ++r)
             CHECK(pm_seq_step(0, r) == 15 - r, "T1 reversed under master 16: %u -> %u", r, 15 - r);
         p[0x8e50] = 0xff; p[0x8e51] = 0xff;
+    }
+
+    /* The project file and battery RAM. */
+    {
+        char line[40];
+        pm_state.settings.global = PM_PINGPONG;
+        for (unsigned t = 0; t < PM_TRACKS; ++t) pm_state.settings.track[t] = (uint8_t)(t % PM_MODES);
+        unsigned n = pm_project_format(line);
+        CHECK(n == strlen(line) && n == 31, "line length %u", n);
+        CHECK(strcmp(line, "#PLAY_MODES=20123401234012340\r\n") == 0, "line %s", line);
+
+        /* A storing pass starts from NORMAL and writes battery RAM. */
+        nv[2] = 0x55;
+        pm_project_begin(0);               /* parse-only: untouched */
+        CHECK(pm_state.settings.global == PM_PINGPONG, "parse-only begin keeps the modes");
+        pm_project_begin(1);
+        CHECK(pm_state.settings.global == 0 && pm_state.settings.track[3] == 0, "storing begin: NORMAL");
+        for (unsigned b = 2; b < 11; ++b) CHECK(nv[b] == 0, "battery byte %u cleared", b);
+        CHECK(nv[11] == 0 && nv[12] == 0, "no write past 0x100b14ea");
+
+        /* Ours, on the parse-only pass: consumed, nothing stored. */
+        CHECK(pm_project_line("#PLAY_MODES=4", 1) == 1, "ours, parse-only");
+        CHECK(pm_state.settings.global == 0, "parse-only stores nothing");
+        CHECK(pm_project_line("#SEQUENCER_SCALE=3", 0) == 0, "another '#' line is not ours");
+        CHECK(pm_project_line("#PLAY_MODE", 0) == 0, "a short key is not ours");
+        CHECK(pm_project_line("#PLAY_MODES=31402", 0) == 1, "ours, storing");
+        CHECK(pm_state.settings.global == 3 && pm_state.settings.track[0] == 1
+              && pm_state.settings.track[1] == 4 && pm_state.settings.track[2] == 0
+              && pm_state.settings.track[3] == 2 && pm_state.settings.track[4] == 0,
+              "short line: given digits, the rest NORMAL");
+        CHECK(nv[2] == 0x31 && nv[3] == 0x40 && nv[4] == 0x20, "battery nibbles %02x %02x %02x", nv[2], nv[3], nv[4]);
+        pm_project_begin(1);
+        CHECK(pm_project_line("#PLAY_MODES=19x4", 0) == 1, "bad digits");
+        CHECK(pm_state.settings.global == 1 && pm_state.settings.track[0] == 0
+              && pm_state.settings.track[1] == 0, "9 -> NORMAL, stop at a non-digit");
+
+        /* Round trip, and a power cycle: DRAM fresh, battery RAM kept. */
+        pm_project_begin(1);
+        CHECK(pm_project_line("#PLAY_MODES=01234012340123401", 0) == 1, "full line");
+        n = pm_project_format(line);
+        CHECK(strcmp(line, "#PLAY_MODES=01234012340123401\r\n") == 0, "round trip %s", line);
+        memset(&pm_state, 0, sizeof pm_state);
+        pm_ready = 0;
+        n = pm_project_format(line);
+        CHECK(strcmp(line, "#PLAY_MODES=01234012340123401\r\n") == 0, "after power cycle %s", line);
+        nv[2] = 0xf7;                      /* garbage: NORMAL */
+        memset(&pm_state, 0, sizeof pm_state);
+        pm_ready = 0;
+        pm_project_format(line);
+        CHECK(line[12] == '0' && line[13] == '0', "out-of-range nibbles read NORMAL: %s", line);
+
+        /* A key change reaches battery RAM. */
+        set_playing(1, 3);                 /* PER TRACK */
+        pm_project_begin(1);
+        key(2, +1);                        /* T3 REVERSED */
+        CHECK(nv[3] == 0x01, "T3 in battery RAM: %02x", nv[3]);
+        set_playing(0, 0);
+        key(0, +1); key(0, +1);            /* ALL PINGPONG */
+        CHECK(nv[2] >> 4 == 2, "the shared mode in battery RAM: %02x", nv[2]);
+        pm_project_format(line);
+        CHECK(strcmp(line, "#PLAY_MODES=20010000000000000\r\n") == 0, "line %s", line);
     }
 
     if (failures) { printf("%d failure(s)\n", failures); return 1; }

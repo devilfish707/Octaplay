@@ -4,7 +4,7 @@
 | adapter.c.
 |
 | Sites read from the owner's original 1.40C with investigate.py (rounds 1
-| and 2, 3 Oct 2026); INVESTIGATION.md section 4 has the stock listings.
+| to 4, 3-7 Oct 2026); INVESTIGATION.md section 4 has the stock listings.
 | Every stub is reached by a six-byte `jmp` that the manifest plants over
 | whole stock instructions, replays them, and jumps back.
         .text
@@ -251,12 +251,66 @@ pm_arrow_key:
         movea.l 8(%sp),%a0              | displaced
         jmp     0x400491a6
 
+| ---- the project file ------------------------------------------------------
+| The loader 0x400866c4(file, storing) reads project.work line by line and
+| skips any line that starts with '#' (stock too); the writer 0x400882a2
+| prints one "KEY=%d\r\n" line per setting. SCALE QUANTIZER plants its
+| stubs on the instructions just before these three and returns to exactly
+| these addresses, so the two compose (its lines are handled first; every
+| other '#' line reaches ours). Investigation round 4.
+        .global pm_proj_begin, pm_proj_line, pm_proj_write
+        .equ    WRITE, 0x400166b8       | write(file, buffer, length), as the writer's a2
+
+| 0x400866d4, the loader's head: d0 = its second argument (0 = the
+| parse-only pass). Displaced: movel %d0,%sp@(1158) ; seq %d0 (6); the move
+| sets Z for the seq. d1/a0/a1 are free here (reloaded before any use).
+pm_proj_begin:
+        move.l  %d0,-(%sp)
+        jsr     pm_project_begin        | (storing): a storing pass starts NORMAL
+        move.l  (%sp)+,%d0
+        move.l  %d0,1158(%sp)           | displaced
+        seq     %d0                     | displaced
+        jmp     0x400866da
+
+| 0x400867aa, the loader's comment check: d0 = the line's first character,
+| d5 = '#', d3 = the line (NUL-ended, without CR LF). Displaced: cmpl
+| %d0,%d5 ; beqw 0x40088224 (6). A '#' line goes to pm_project_line with the
+| loader's parse-only flag (58(sp), nonzero on the parse-only pass) and is
+| then skipped as stock skips it; d0/d1/a0/a1 are reloaded at the next line.
+pm_proj_line:
+        cmp.l   %d0,%d5
+        beq.s   .Lline_hash
+        jmp     0x400867b0              | not a comment: stock goes on
+.Lline_hash:
+        move.l  58(%sp),-(%sp)          | parse-only
+        move.l  %d3,-(%sp)              | the line
+        jsr     pm_project_line
+        addq.l  #8,%sp
+        jmp     0x40088224              | the loop's next line
+
+| 0x400888b2, the writer, at PATTERN_CHANGE_AUTO_SILENCE_TRACKS's line: its
+| value is already pushed (0x400888b0). d3 = the file. Our line first, then
+| the displaced pea 0x400b8244 (6). d0/d1/a0/a1 are free (the stock line
+| reloads them; its value is on the stack). A failed write is not checked
+| here; the stock line that follows checks its own.
+pm_proj_write:
+        pea     pm_line
+        jsr     pm_project_format       | d0 := the length
+        addq.l  #4,%sp
+        move.l  %d0,-(%sp)
+        pea     pm_line
+        move.l  %d3,-(%sp)
+        jsr     WRITE
+        lea     12(%sp),%sp
+        pea     0x400b8244              | displaced
+        jmp     0x400888b8
+
 | Explicitly initialised, loader-owned DRAM (as EUCLID's state), not the
 | 0x80006a40 scratch block, which the live DSP path overwrites. The C's
 | _Static_asserts pin the sizes.
         .balign 4
         .global pm_state, pm_ready, pm_last_transport, pm_last_bank
-        .global pm_last_pattern, pm_toast, pm_held_track, pm_restart
+        .global pm_last_pattern, pm_toast, pm_held_track, pm_restart, pm_line
 pm_state:
         .zero   224
 pm_ready:
@@ -273,3 +327,5 @@ pm_held_track:
         .long   0                       | the held TRACK key + 1, 0 = none
 pm_restart:
         .long   0                       | 1 = a transport start since the last step
+pm_line:
+        .zero   40                      | the project line: 12 + 17 + CR LF + NUL
