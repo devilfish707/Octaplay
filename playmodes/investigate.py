@@ -112,8 +112,9 @@ def main():
     ap.add_argument("--os", type=pathlib.Path,
                     required=True,
                     help="your original 1.40C MAIN OS extraction")
-    ap.add_argument("--round", type=int, default=1, choices=(1, 2, 3),
-                    help="2: the callers of the step handler and the key maps; 3: the playhead display")
+    ap.add_argument("--round", type=int, default=1, choices=(1, 2, 3, 4),
+                    help="2: the step handler's callers and the key maps; 3: the playhead display; "
+                         "4: the project file loader / writer and how settings mark it for saving")
     ap.add_argument("--out", type=pathlib.Path, default=REPO / "out/playmodes-probe.txt")
     args = ap.parse_args()
     if not args.os.is_file():
@@ -128,6 +129,9 @@ def main():
         return write(args, out)
     if args.round == 3:
         round_three(tool, args, image, out)
+        return write(args, out)
+    if args.round == 4:
+        round_four(tool, args, image, out)
         return write(args, out)
 
     for start, stop, why in RANGES:
@@ -220,6 +224,81 @@ def round_three(tool, args, image, out):
         out.append(f"   callers of 0x{entry:08x}: {len(callers)}")
         for i in callers[:12]:
             out += ["   " + l for l in full[max(0, i - 8):i + 3]] + ["   ..."]
+        out.append("")
+
+
+# Round 4: saving the play modes in the project file. The code places come
+# from SCALE QUANTIZER's project hooks (loader entry 0x400866cc, the '#'
+# line check 0x400867a2, the writer line 0x400888aa) and the stock setters of
+# two project-level settings (CHAIN AFTER 0x400659ec, the PERSONALIZE
+# setter 0x40068ca0); the data are the "edited" flags STEP_LOCKS.md names.
+PROJECT_CODE = {
+    0x400866cc: "the project file loader (SCALE QUANTIZER's entry hook)",
+    0x400867a2: "the loader's '#' comment-line check",
+    0x400888aa: "the project file writer (SCALE QUANTIZER's line hook)",
+    0x400659ec: "the CHAIN AFTER menu setter (a project setting)",
+    0x40068ca0: "the QUANTIZE LIVE REC PERSONALIZE setter",
+}
+PROJECT_DATA = {
+    0x100f8598: "the 'edited' flag a lock edit sets",
+    0x40027e00: "the routine a lock edit calls after storing",
+}
+
+
+RANGES_4 = (
+    (0x400866c4, 0x40086900, "the loader's head and its line loop up to the '#' check"),
+    (0x40088200, 0x40088240, "the loader's next-line point 0x40088224"),
+    (0x40088840, 0x40088940, "the writer's lines around 0x400888aa"),
+)
+
+
+def round_four(tool, args, image, out):
+    for start, stop, why in RANGES_4:
+        out.append(f"==== 0x{start:08x}..0x{stop:08x}  {why}")
+        out += disassemble(tool, args.os, start, stop)
+        out.append("")
+    full = disassemble(tool, args.os, BASE, BASE + len(image))
+    index = {address_of(line): k for k, line in enumerate(full)}
+
+    def function_of(i, limit=400):
+        start = function_start(full, i)
+        body, k = [], start
+        while k < len(full) and len(body) < limit:
+            body.append(full[k])
+            if full[k].split("\t")[-1].strip().startswith("rts") and k > i:
+                break
+            k += 1
+        return start, body
+
+    def callers(entry, limit=16):
+        needle = f"0x{entry:x}"
+        found = [i for i, line in enumerate(full)
+                 if needle in line.lower() and ("jsr" in line or "bsr" in line or "jmp" in line or "pea" in line)]
+        rows = []
+        for i in found[:limit]:
+            rows += ["   " + l for l in full[max(0, i - 10):i + 3]] + ["   ..."]
+        return found, rows
+
+    for address, why in PROJECT_CODE.items():
+        i = index.get(address)
+        if i is None:
+            out.append(f"==== 0x{address:08x} {why}: not an instruction boundary")
+            continue
+        start, body = function_of(i)
+        entry = address_of(full[start])
+        out.append(f"==== 0x{address:08x} {why}: in the function at 0x{entry:08x}")
+        out += body
+        found, rows = callers(entry)
+        out.append(f"   callers of 0x{entry:08x}: {len(found)}")
+        out += rows
+        out.append("")
+
+    for address, why in PROJECT_DATA.items():
+        needle = f"0x{address:x}"
+        hits = [i for i, line in enumerate(full) if needle in line.lower()]
+        out.append(f"==== 0x{address:08x} {why}: {len(hits)} reference(s)")
+        for i in hits[:30]:
+            out += full[max(0, i - 6):i + 4] + ["   ..."]
         out.append("")
 
 
