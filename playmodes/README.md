@@ -17,6 +17,7 @@ or set per track. ColdFire-only (no DSP code), for original OS 1.40C.
 | NORMAL | 1 2 3 … 16, 1 2 3 … (stock) |
 | REVERSED | 16 15 14 … 1, 16 15 … |
 | PINGPONG | 1 … 16 15 … 2, 1 … 16 15 … 2: the end steps play once |
+| PINGPONG 2 | 1 … 16 16 … 1, 1 … 16 …: the end steps play twice |
 | RANDOM | any step each time; a step can repeat |
 | SHUFFLE | every step once per pass, in a new order every pass |
 
@@ -40,7 +41,8 @@ follow the step you hear.
 | hold [TRACK n], press [UP] | the mode one row up the list (towards NORMAL) |
 | hold [TRACK n], press [DOWN] | the mode one row down (towards SHUFFLE) |
 
-The list is NORMAL, REVERSED, PINGPONG, RANDOM, SHUFFLE and does not wrap.
+The list is NORMAL, REVERSED, PINGPONG, PINGPONG 2, RANDOM, SHUFFLE and does
+not wrap.
 A one-second popup shows the result: `ALL PINGPONG` under NORMAL scale mode
 (any TRACK key changes the shared mode), `T3 PINGPONG` or `M2 REVERSED`
 under PER TRACK. Default NORMAL. Changing the mode, playing or stopped,
@@ -54,7 +56,7 @@ popup and the TRACK + arrow keys work on the pattern that is playing.
 
 The modes are part of the project. They are written to `project.work` as
 one line per pattern that is not all NORMAL, `#PLAY_MODES=A01:` and 17
-digits (the shared mode, T1–T8, M1–M8; 0 NORMAL … 4 SHUFFLE), whenever the
+digits (the shared mode, T1–T8, M1–M8; 0 NORMAL, 1 REVERSED, 2 PINGPONG, 3 RANDOM, 4 SHUFFLE, 5 PINGPONG 2), whenever the
 Octatrack writes the project's settings: PROJECT > SAVE (which copies it to
 `project.strd`), SYNC TO CARD, and PROJECT > CHANGE. Loading or reloading a
 project sets them from those lines; a project without them (older, or saved

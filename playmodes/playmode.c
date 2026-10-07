@@ -6,7 +6,12 @@ _Static_assert(sizeof(PmTrack) == 12, "track layout");
 _Static_assert(sizeof(PmState) == 20 + 12 * PM_TRACKS + 8, "state layout");
 
 static const char *const NAMES[PM_MODES] = {
-    "NORMAL", "REVERSED", "PINGPONG", "RANDOM", "SHUFFLE",
+    "NORMAL", "REVERSED", "PINGPONG", "RANDOM", "SHUFFLE", "PINGPONG 2",
+};
+
+/* The order TRACK + UP / DOWN walks (stored numbers in list order). */
+static const uint8_t ORDER[PM_MODES] = {
+    PM_NORMAL, PM_REVERSE, PM_PINGPONG, PM_PINGPONG2, PM_RANDOM, PM_SHUFFLE,
 };
 
 /* A 32-bit integer mix (the lowbias32 constants). Multiplies and shifts
@@ -68,6 +73,13 @@ unsigned pm_map(unsigned mode, unsigned len, uint32_t cycle, unsigned raw,
         uint32_t period = 2u * len - 2u;
         uint32_t p = ((cycle % period) * len + raw) % period;
         return p < len ? p : period - p;
+    }
+    case PM_PINGPONG2: {
+        /* The same bounce, period 2*len: the end steps play twice
+         * (1 .. 16 16 .. 1 1 .. 16). */
+        uint32_t period = 2u * len;
+        uint32_t p = ((cycle % period) * len + raw) % period;
+        return p < len ? p : period - 1 - p;
     }
     case PM_RANDOM: {
         uint32_t h = mix(seed ^ mix(cycle * 0x85ebca6bu + raw * 0xc2b2ae35u + 1u));
@@ -141,12 +153,14 @@ unsigned pm_lookup(const PmState *s, unsigned track, unsigned raw,
 unsigned pm_ui_step(PmState *s, unsigned track, int delta, unsigned per_track) {
     uint8_t *slot = per_track && track < PM_TRACKS ? &s->settings.track[track]
                                                    : &s->settings.global;
-    int mode = *slot < PM_MODES ? *slot : PM_NORMAL;
-    mode += delta < 0 ? -1 : delta > 0 ? 1 : 0;
-    if (mode < 0) mode = 0;
-    if (mode >= PM_MODES) mode = PM_MODES - 1;
-    *slot = (uint8_t)mode;
-    return (unsigned)mode;
+    int at = 0;
+    for (int k = 0; k < PM_MODES; ++k)
+        if (ORDER[k] == *slot) at = k;
+    at += delta < 0 ? -1 : delta > 0 ? 1 : 0;
+    if (at < 0) at = 0;
+    if (at >= PM_MODES) at = PM_MODES - 1;
+    *slot = ORDER[at];
+    return ORDER[at];
 }
 
 char *pm_ui_label(const PmState *s, unsigned track, unsigned per_track,

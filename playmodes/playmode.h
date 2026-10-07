@@ -25,6 +25,9 @@ enum {
     PM_PINGPONG,     /* 1 .. 16 15 .. 2 | 1 .. : the end steps play once    */
     PM_RANDOM,       /* any step, repeats allowed                           */
     PM_SHUFFLE,      /* every step once per pass, in a new order each pass  */
+    PM_PINGPONG2,    /* 1 .. 16 16 .. 1 | 1 .. : the end steps play twice.
+                        Numbered last so saved projects keep their digits;
+                        the list the keys walk puts it after PINGPONG      */
     PM_MODES
 };
 

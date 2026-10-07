@@ -15,6 +15,8 @@ What the host suites cover:
   ±1 and the end steps are not doubled; it keeps bouncing across passes.
 - SHUFFLE: for every length 1–64 and four seeds, each of eight passes plays
   every step exactly once; the order changes between passes.
+- PINGPONG 2: exact sequences for lengths 1 and 4; for 2–64 every move is
+  ±1 and only the end steps repeat, once per turn.
 - RANDOM: 64,000 steps over 16 within ±10 % of uniform; repeats occur.
 - NORMAL scale mode: all tracks share one RANDOM / SHUFFLE order; PER TRACK:
   each its own.
@@ -59,8 +61,8 @@ Test images `playmodes-test`, builds 12–16, on 1.40C with stock effects.
 | 17 | Modes saved with the project (one set for all patterns). Found: the set was shared by every pattern: A01 REVERSED, A02 changed, back on A01 it played A02's mode (as designed then). |
 
 Next build (18): per-pattern modes, their project lines, the whole table
-in battery RAM, pattern copy / paste / undo, clear pattern; the MASTER
-LENGTH cut.
+in battery RAM, pattern copy / paste / undo, clear pattern, PINGPONG 2; the
+MASTER LENGTH cut.
 
 ## Not yet
 

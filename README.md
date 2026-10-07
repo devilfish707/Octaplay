@@ -1,7 +1,7 @@
 # Octaplay
 
 Playhead modes for the Elektron Octatrack: run the sequencer **normal,
-reversed, pingpong, random or shuffle**, shared by every track or set per
+reversed, pingpong (two kinds), random or shuffle**, shared by every track or set per
 track (audio T1–T8 and MIDI M1–M8). A firmware module for original OS
 1.40C, built with the [octabam](https://github.com/sambanks/octabam) /
 octamod remixer.
@@ -19,6 +19,7 @@ Flashing modified firmware is at your own risk.
 | NORMAL | 1 2 3 … 16 (stock) |
 | REVERSED | 16 15 14 … 1 |
 | PINGPONG | 1 … 16 15 … 2, 1 … 16 …: the end steps play once |
+| PINGPONG 2 | 1 … 16 16 … 1, 1 … 16 …: the end steps play twice |
 | RANDOM | any step each time; a step can repeat |
 | SHUFFLE | every step once per pass, in a new order every pass |
 

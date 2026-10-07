@@ -314,8 +314,8 @@ void pm_key_updown(unsigned track, int delta) {
  *
  *     #PLAY_MODES=A01:10000000000000000
  *
- * the bank (A..P) and pattern (01..16), then a digit per mode (0 NORMAL ..
- * 4 SHUFFLE): the shared one, T1..T8, M1..M8. SAVE writes project.work and
+ * the bank (A..P) and pattern (01..16), then a digit per mode (0 NORMAL,
+ * 1 REVERSED, 2 PINGPONG, 3 RANDOM, 4 SHUFFLE, 5 PINGPONG 2): the shared one, T1..T8, M1..M8. SAVE writes project.work and
  * copies it to project.strd; RELOAD copies it back; PROJECT > CHANGE first
  * writes the working state, then loads (the quantizer README measured all
  * of it), so the lines follow the project everywhere the stock settings go.

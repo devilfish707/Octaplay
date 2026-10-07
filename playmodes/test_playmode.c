@@ -139,6 +139,29 @@ static void test_advance(void) {
     CHECK(s.tracks[3].cycle == 0, "other tracks untouched");
 }
 
+static void test_pingpong2(void) {
+    /* Exact sequences: the end steps twice, continuous across passes. */
+    static const unsigned want4[] = {0, 1, 2, 3, 3, 2, 1, 0, 0, 1, 2, 3, 3, 2, 1, 0};
+    for (unsigned i = 0; i < 16; ++i)
+        CHECK(pm_map(PM_PINGPONG2, 4, i / 4, i % 4, 0) == want4[i], "len 4 step %u", i);
+    for (unsigned i = 0; i < 6; ++i)
+        CHECK(pm_map(PM_PINGPONG2, 1, i, 0, 0) == 0, "len 1");
+    for (unsigned len = 2; len <= 64; ++len) {
+        unsigned prev = 0, same = 0;
+        for (unsigned i = 0; i < 6 * len; ++i) {
+            unsigned now = pm_map(PM_PINGPONG2, len, i / len, i % len, 0);
+            CHECK(now < len, "len %u in range", len);
+            if (i) {
+                int d = (int)now - (int)prev;
+                CHECK(d >= -1 && d <= 1, "len %u: moves by one", len);
+                if (!d) { ++same; CHECK(now == 0 || now == len - 1, "len %u: repeats only at the ends", len); }
+            }
+            prev = now;
+        }
+        CHECK(same == 6 - 1, "len %u: each turn repeats its end step (%u)", len, same);
+    }
+}
+
 static void test_ui(void) {
     PmState s; pm_init(&s, 7);
     char label[16];
@@ -146,8 +169,14 @@ static void test_ui(void) {
     CHECK(pm_ui_step(&s, 2, +1, 0) == PM_REVERSE, "down from NORMAL");
     CHECK(pm_mode(&s, 0, 0) == PM_REVERSE && pm_mode(&s, 7, 0) == PM_REVERSE, "shared mode");
     CHECK(strcmp(pm_ui_label(&s, 5, 0, label), "ALL REVERSED") == 0, "label %s", label);
-    pm_ui_step(&s, 0, +1, 0); pm_ui_step(&s, 0, +1, 0); pm_ui_step(&s, 0, +1, 0);
+    CHECK(pm_ui_step(&s, 0, +1, 0) == PM_PINGPONG, "then PINGPONG");
+    CHECK(pm_ui_step(&s, 0, +1, 0) == PM_PINGPONG2, "then PINGPONG 2");
+    CHECK(strcmp(pm_ui_label(&s, 5, 0, label), "ALL PINGPONG 2") == 0, "label %s", label);
+    CHECK(pm_ui_step(&s, 0, +1, 0) == PM_RANDOM, "then RANDOM");
+    CHECK(pm_ui_step(&s, 0, +1, 0) == PM_SHUFFLE, "then SHUFFLE");
     CHECK(pm_ui_step(&s, 0, +1, 0) == PM_SHUFFLE, "clamps at SHUFFLE");
+    CHECK(pm_ui_step(&s, 0, -1, 0) == PM_RANDOM && pm_ui_step(&s, 0, -1, 0) == PM_PINGPONG2,
+          "UP walks back through PINGPONG 2");
     for (int i = 0; i < 9; ++i) pm_ui_step(&s, 0, -1, 0);
     CHECK(s.settings.global == PM_NORMAL, "clamps at NORMAL");
     /* PER TRACK: each track its own, and the shared one is kept. */
@@ -163,7 +192,7 @@ static void test_ui(void) {
     s.settings.track[4] = 200;                     /* garbage reads as NORMAL */
     CHECK(pm_mode(&s, 4, 1) == PM_NORMAL, "invalid stored mode");
     pm_ui_step(&s, 15, +1, 1); pm_ui_step(&s, 15, +1, 1); pm_ui_step(&s, 15, +1, 1);
-    pm_ui_step(&s, 15, +1, 1);
+    pm_ui_step(&s, 15, +1, 1); pm_ui_step(&s, 15, +1, 1);
     CHECK(strcmp(pm_ui_label(&s, 15, 1, label), "M8 SHUFFLE") == 0, "label %s", label);
 }
 
@@ -227,6 +256,7 @@ int main(void) {
     test_random();
     test_lookahead();
     test_advance();
+    test_pingpong2();
     test_ui();
     test_per_track_lengths();
     test_shared_sequence();
