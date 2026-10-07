@@ -133,6 +133,8 @@ MODULE = Module(
         Detour(0x4003a39c, stock_guard(0x4003a39c, 6, "e6a54fce7e5d59ad5b91e8bdf463dd39f7ec815dafe9849a9b4e35b95157de61"),
                "playmodes", "pm_clear_pattern", CLEAR, kind="jmp"),
     ),
-    conflicts=(("PLOCKS P2", "both claim the battery RAM 0x100f8600.. and the pattern memcpy sites"),),
+    # Not combinable with PLOCKS P2: both use battery RAM 0x100f8600.. and the
+    # 20 pattern memcpy sites (this remixer's Module has no `conflicts`; the
+    # shared detour sites already stop a build with both).
     gates=(Gate("modules/playmodes/verify.py", remix_arg=False),),
 )

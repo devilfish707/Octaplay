@@ -115,7 +115,7 @@ it its own CHAIN AFTER length). This is stock behaviour.
 - PROJECT > NEW may keep the previous project's modes (untested).
 - Copying a single track does not copy that track's mode.
 - Does not combine with PLOCKS P2: both use the same battery RAM and the
-  same pattern-copy sites (the remixer refuses the pair).
+  same pattern-copy sites (the shared hook sites stop a build with both).
 - Composes with EUCLID and SCALE QUANTIZER by design (their stubs return
   into this module's sites). DIRECT JUMP, OCTAKIT and the KYOTI modules hook the same tick
   handler at other sites; combinations are untested.
