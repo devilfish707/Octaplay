@@ -219,10 +219,24 @@ battery RAM. Read here from 1.40C:
   `0x40068ca0` likewise (`0x800000ac`, `0x100fff3c`). Project settings
   reach the file whenever the writer runs. `0x100f8598` (set before
   `0x40027e00` at 461 sites) is the pattern-edit path, not needed here.
-- Battery RAM `0x100b14e2..0x100b14ef` is linker padding before the project
-  record `0x100b14f0`, with no stock reference (the quantizer's watch and
-  reference scan); the quantizer holds `0x100b14ec..ee`. The modes take
-  `0x100b14e2..ea` as nibbles.
+- Battery RAM: stock references nothing in `0x100f859c..0x100fff00`
+  (STEP_LOCKS.md section 6); PLOCKS P2 holds `0x100f8600..0x100ffe00`. The
+  modes' power-off copy takes the two ends, `0x100ffe00..0x100fff00` and
+  `0x100f859c..0x100f8600` (build 17 used `0x100b14e2..ea`, no longer).
+
+### The pattern record and the bank file (round 5, 7 Oct 2026)
+
+A pattern is `0x8ed8` bytes in RAM: 8 audio tracks (`0x91a`), 8 MIDI
+tracks (`0x8b0`), then a tail from `0x8e50`. The bank serializer
+`0x4008b278(fo, bank)` writes each pattern with `0x4008a6fc`, field by
+field: the tracks, then the tail's `0x8e50` (2), `0x8e52`..`0x8e57` (1
+each) and `0x8e58` (4), and nothing after `0x8e5b`. So the bank file keeps
+no byte the modes could use: the tail's `0x8e5c..0x8ed7` never reaches the
+card (no instruction names those offsets either; the hits are data), and
+every track byte is in use. Pattern paste (`0x4002b9b0`) copies all
+`0x8ed8` bytes and its battery copy; the current bank's battery copy
+(`0x4000faf0` / `0x4000fbb4`) is `0x8ed80` bytes. The modes therefore live
+in a table of their own (256 rows), in the project file and in battery RAM.
 
 ### Still open
 

@@ -27,17 +27,19 @@ project save are not yet played (build 17). Not stress-tested (TESTING.md).
   0x4009c3da, 0x400a2210, 0x400a24d6, 0x400a27e8  transport starts: restart
 
   0x400866d4  project loader head: a storing pass starts from NORMAL
-  0x400867aa  project loader '#' lines: read "#PLAY_MODES=<17 digits>"
-  0x400888b2  project writer: print that line (project.work; SAVE copies it
-              to project.strd)
+  0x400867aa  project loader '#' lines: read "#PLAY_MODES=A01:<17 digits>"
+  0x400888b2  project writer: one such line per pattern that is not all
+              NORMAL (project.work; SAVE copies it to project.strd)
 
 EUCLID owns 0x4009c3d4 / 0x4009c4d4 (the PLAYING stores); its PLAY stub
 returns to 0x4009c3da, this module's site, so the two compose. Pattern
 switches are observed from the sequencer's own bytes. No 0x80006a40 scratch
 RAM (overwritten by the live DSP path on hardware); state is loader-owned
-DRAM (hooks.s). The modes are kept in battery RAM 0x100b14e2..ea (nibbles;
-a power cycle reads no project file) and in the project file's
-"#PLAY_MODES=" line. SCALE QUANTIZER's three project-file stubs return to
+DRAM (hooks.s). Every pattern of every bank has its own modes (a 256-row
+table in that DRAM), kept in the project file's "#PLAY_MODES=" lines and,
+for a power cycle (which reads no project file), sparse in battery RAM
+0x100ffe00..0x100fff00 + 0x100f859c..0x100f8600 (free; PLOCKS P2 holds the
+range between). SCALE QUANTIZER's three project-file stubs return to
 this module's three sites, so the two compose.
 """
 from remix.schema import Category, Proof, Detour, Kind, Linked, Module, Gate

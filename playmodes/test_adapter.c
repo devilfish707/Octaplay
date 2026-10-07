@@ -13,6 +13,8 @@ PmState pm_state;
 uint8_t pm_ready, pm_last_transport, pm_last_bank, pm_last_pattern;
 uint32_t pm_restart;
 char pm_toast[16];
+uint8_t pm_table[256][17];
+uint16_t pm_cur;
 
 unsigned pm_seq_step(unsigned track, unsigned raw);
 unsigned pm_seq_peek(unsigned track, unsigned raw);
@@ -20,7 +22,7 @@ void pm_key_updown(unsigned track, int delta);
 static const char *key(unsigned track, int delta) { pm_key_updown(track, delta); return pm_toast; }
 unsigned pm_track_length(unsigned track);
 unsigned pm_show(unsigned track, unsigned raw);
-unsigned pm_project_format(char *out);
+unsigned pm_project_format(char *out, unsigned index);
 void pm_project_begin(unsigned storing);
 unsigned pm_project_line(const char *line, unsigned parse_only);
 
@@ -28,12 +30,13 @@ unsigned pm_project_line(const char *line, unsigned parse_only);
 static uint8_t blob[2 * 0x9b340];
 static uint8_t seq[0x200];
 static uint8_t clock_ram[16];
-static uint8_t nv[16];               /* battery RAM 0x100b14e0.. */
+static uint8_t nv_a[0x100], nv_b[0x64];   /* battery RAM 0x100ffe00.., 0x100f859c.. */
 
 volatile uint8_t *pm_host_addr(uint32_t a) {
     if (a >= 0x400e21e0u && a < 0x400e21e0u + sizeof blob) return blob + (a - 0x400e21e0u);
     if (a >= 0x80006500u && a < 0x80006500u + sizeof seq) return seq + (a - 0x80006500u);
-    if (a >= 0x100b14e2u && a < 0x100b14ebu) return nv + (a - 0x100b14e0u);
+    if (a >= 0x100ffe00u && a < 0x100fff00u) return nv_a + (a - 0x100ffe00u);
+    if (a >= 0x100f859cu && a < 0x100f8600u) return nv_b + (a - 0x100f859cu);
     if (a >= 0x46104cf0u && a < 0x46104cf0u + sizeof clock_ram) return clock_ram + (a - 0x46104cf0u);
     printf("FAIL: adapter read an unexpected address 0x%08x\n", a);
     ++failures;
@@ -150,72 +153,110 @@ int main(void) {
         CHECK(pm_track_length(0) == 20, "master 0: no cut");
         p[0x8e50] = 0; p[0x8e51] = 16;
         /* REVERSED on T1 under master 16: 16..1, the mirror of what NORMAL plays. */
-        pm_state.settings.track[0] = PM_REVERSE;
+        pm_table[1 * 16 + 3][1] = PM_REVERSE;   /* B04's T1 */
+        pm_cur = 0;
         pm_restart = 1;
         for (unsigned r = 0; r < 16; ++r)
             CHECK(pm_seq_step(0, r) == 15 - r, "T1 reversed under master 16: %u -> %u", r, 15 - r);
         p[0x8e50] = 0xff; p[0x8e51] = 0xff;
     }
 
-    /* The project file and battery RAM. */
+    /* Per pattern: each pattern keeps its own modes. */
     {
-        char line[40];
-        pm_state.settings.global = PM_PINGPONG;
-        for (unsigned t = 0; t < PM_TRACKS; ++t) pm_state.settings.track[t] = (uint8_t)(t % PM_MODES);
-        unsigned n = pm_project_format(line);
-        CHECK(n == strlen(line) && n == 31, "line length %u", n);
-        CHECK(strcmp(line, "#PLAY_MODES=20123401234012340\r\n") == 0, "line %s", line);
-
-        /* A storing pass starts from NORMAL and writes battery RAM. */
-        nv[2] = 0x55;
-        pm_project_begin(0);               /* parse-only: untouched */
-        CHECK(pm_state.settings.global == PM_PINGPONG, "parse-only begin keeps the modes");
-        pm_project_begin(1);
-        CHECK(pm_state.settings.global == 0 && pm_state.settings.track[3] == 0, "storing begin: NORMAL");
-        for (unsigned b = 2; b < 11; ++b) CHECK(nv[b] == 0, "battery byte %u cleared", b);
-        CHECK(nv[11] == 0 && nv[12] == 0, "no write past 0x100b14ea");
-
-        /* Ours, on the parse-only pass: consumed, nothing stored. */
-        CHECK(pm_project_line("#PLAY_MODES=4", 1) == 1, "ours, parse-only");
-        CHECK(pm_state.settings.global == 0, "parse-only stores nothing");
-        CHECK(pm_project_line("#SEQUENCER_SCALE=3", 0) == 0, "another '#' line is not ours");
-        CHECK(pm_project_line("#PLAY_MODE", 0) == 0, "a short key is not ours");
-        CHECK(pm_project_line("#PLAY_MODES=31402", 0) == 1, "ours, storing");
-        CHECK(pm_state.settings.global == 3 && pm_state.settings.track[0] == 1
-              && pm_state.settings.track[1] == 4 && pm_state.settings.track[2] == 0
-              && pm_state.settings.track[3] == 2 && pm_state.settings.track[4] == 0,
-              "short line: given digits, the rest NORMAL");
-        CHECK(nv[2] == 0x31 && nv[3] == 0x40 && nv[4] == 0x20, "battery nibbles %02x %02x %02x", nv[2], nv[3], nv[4]);
-        pm_project_begin(1);
-        CHECK(pm_project_line("#PLAY_MODES=19x4", 0) == 1, "bad digits");
-        CHECK(pm_state.settings.global == 1 && pm_state.settings.track[0] == 0
-              && pm_state.settings.track[1] == 0, "9 -> NORMAL, stop at a non-digit");
-
-        /* Round trip, and a power cycle: DRAM fresh, battery RAM kept. */
-        pm_project_begin(1);
-        CHECK(pm_project_line("#PLAY_MODES=01234012340123401", 0) == 1, "full line");
-        n = pm_project_format(line);
-        CHECK(strcmp(line, "#PLAY_MODES=01234012340123401\r\n") == 0, "round trip %s", line);
-        memset(&pm_state, 0, sizeof pm_state);
-        pm_ready = 0;
-        n = pm_project_format(line);
-        CHECK(strcmp(line, "#PLAY_MODES=01234012340123401\r\n") == 0, "after power cycle %s", line);
-        nv[2] = 0xf7;                      /* garbage: NORMAL */
-        memset(&pm_state, 0, sizeof pm_state);
-        pm_ready = 0;
-        pm_project_format(line);
-        CHECK(line[12] == '0' && line[13] == '0', "out-of-range nibbles read NORMAL: %s", line);
-
-        /* A key change reaches battery RAM. */
-        set_playing(1, 3);                 /* PER TRACK */
-        pm_project_begin(1);
-        key(2, +1);                        /* T3 REVERSED */
-        CHECK(nv[3] == 0x01, "T3 in battery RAM: %02x", nv[3]);
+        set_transport(1);
+        set_playing(0, 0);                 /* A01, NORMAL scale mode */
+        pm_project_begin(1);               /* all NORMAL */
+        key(0, +1);                        /* A01: ALL REVERSED */
+        CHECK(strcmp(pm_toast, "ALL REVERSED") == 0, "A01 %s", pm_toast);
+        set_playing(1, 3);                 /* B04, PER TRACK */
+        pm_seq_step(0, 0);
+        CHECK(pm_state.settings.global == 0 && pm_state.settings.track[0] == 0, "B04 starts NORMAL");
+        key(2, +1); key(2, +1);            /* B04 T3 PINGPONG */
+        set_playing(0, 0);                 /* back to A01 */
+        pm_seq_step(0, 0);
+        CHECK(pm_state.settings.global == PM_REVERSE, "A01 is REVERSED again (the reported bug)");
+        CHECK(pm_state.settings.track[2] == 0, "A01's T3 untouched");
+        set_playing(1, 3);
+        pm_seq_step(0, 0);
+        CHECK(pm_state.settings.track[2] == PM_PINGPONG && pm_state.settings.global == 0, "B04 kept T3 PINGPONG");
         set_playing(0, 0);
-        key(0, +1); key(0, +1);            /* ALL PINGPONG */
-        CHECK(nv[2] >> 4 == 2, "the shared mode in battery RAM: %02x", nv[2]);
-        pm_project_format(line);
-        CHECK(strcmp(line, "#PLAY_MODES=20010000000000000\r\n") == 0, "line %s", line);
+        pm_seq_step(0, 0);
+
+        /* The project lines: one per pattern that is not all NORMAL. */
+        char line[40];
+        unsigned lines = 0;
+        for (unsigned i = 0; i < 256; ++i) if (pm_project_format(line, i)) ++lines;
+        CHECK(lines == 2, "two lines (%u)", lines);
+        CHECK(pm_project_format(line, 0) == 35 && strcmp(line, "#PLAY_MODES=A01:10000000000000000\r\n") == 0, "A01 %s", line);
+        CHECK(pm_project_format(line, 19) && strcmp(line, "#PLAY_MODES=B04:00020000000000000\r\n") == 0, "B04 %s", line);
+        CHECK(pm_project_format(line, 1) == 0, "A02 all NORMAL: no line");
+        CHECK(pm_project_format(line, 256) == 0, "past the end: nothing");
+
+        /* Loading: a storing pass starts all NORMAL, then reads the lines. */
+        pm_project_begin(0);
+        CHECK(pm_table[0][0] == PM_REVERSE, "parse-only begin keeps the table");
+        pm_project_begin(1);
+        CHECK(pm_table[0][0] == 0 && pm_table[19][3] == 0, "storing begin: all NORMAL");
+        pm_seq_step(0, 0);
+        CHECK(pm_state.settings.global == 0, "the playing pattern follows the reset");
+        CHECK(pm_project_line("#PLAY_MODES=P16:4", 1) == 1 && pm_table[255][0] == 0, "parse-only stores nothing");
+        CHECK(pm_project_line("#SEQUENCER_SCALE=3", 0) == 0, "another '#' line is not ours");
+        CHECK(pm_project_line("#PLAY_MODES=P16:4", 0) == 1 && pm_table[255][0] == 4, "P16 SHUFFLE");
+        CHECK(pm_project_line("#PLAY_MODES=A01:31402", 0) == 1, "A01 short line");
+        CHECK(pm_table[0][0] == 3 && pm_table[0][1] == 1 && pm_table[0][2] == 4 && pm_table[0][3] == 0
+              && pm_table[0][4] == 2 && pm_table[0][5] == 0, "short line: given digits, the rest NORMAL");
+        pm_seq_step(0, 0);
+        CHECK(pm_state.settings.global == 3, "the playing pattern picks up its loaded row");
+        CHECK(pm_project_line("#PLAY_MODES=A17:4", 0) == 1 && pm_project_line("#PLAY_MODES=Q01:4", 0) == 1
+              && pm_project_line("#PLAY_MODES=A00:4", 0) == 1 && pm_project_line("#PLAY_MODES=A1:4", 0) == 1,
+              "bad pattern names are ours, and skipped");
+        CHECK(pm_project_line("#PLAY_MODES=B02:19x4", 0) == 1 && pm_table[17][0] == 1 && pm_table[17][1] == 0
+              && pm_table[17][2] == 0, "9 -> NORMAL, stop at a non-digit");
+        pm_project_begin(1);
+        CHECK(pm_project_line("#PLAY_MODES=20000000100000000", 0) == 1, "build 17's line");
+        CHECK(pm_table[0][0] == 2 && pm_table[255][0] == 2 && pm_table[100][8] == 1, "applies to every pattern");
+
+        /* Battery RAM: a power cycle (DRAM fresh) brings the table back. */
+        pm_project_begin(1);
+        pm_project_line("#PLAY_MODES=A01:10000000000000000", 0);
+        pm_project_line("#PLAY_MODES=C05:01234012340123401", 0);
+        pm_project_line("#PLAY_MODES=P16:00000000000000004", 0);
+        uint8_t before[256][17];
+        memcpy(before, pm_table, sizeof before);
+        memset(&pm_state, 0, sizeof pm_state); memset(pm_table, 0, sizeof pm_table);
+        pm_ready = 0; pm_cur = 0;
+        pm_seq_step(0, 0);
+        CHECK(memcmp(before, pm_table, sizeof before) == 0, "the table after a power cycle");
+        CHECK(pm_state.settings.global == PM_REVERSE, "A01 plays REVERSED after the power cycle");
+
+        /* A damaged copy reads as all NORMAL. */
+        nv_a[7] ^= 0x40;
+        memset(pm_table, 0, sizeof pm_table); pm_ready = 0; pm_cur = 0;
+        pm_seq_step(0, 0);
+        unsigned any = 0;
+        for (unsigned i = 0; i < 256; ++i) for (unsigned k = 0; k < 17; ++k) any |= pm_table[i][k];
+        CHECK(!any, "a bad checksum: all NORMAL");
+
+        /* Capacity: 70 single-mode patterns fit, the rest are left out of
+         * the battery copy only; full rows: about 30. Nothing is written
+         * outside the two ranges (the host map would fail the read). */
+        pm_project_begin(1);
+        for (unsigned i = 0; i < 256; ++i) pm_table[i][0] = PM_SHUFFLE;
+        pm_project_line("#PLAY_MODES=A01:4", 0);   /* stores the battery copy */
+        memset(pm_table, 0, sizeof pm_table); pm_ready = 0; pm_cur = 0;
+        pm_seq_step(0, 0);
+        unsigned kept = 0;
+        for (unsigned i = 0; i < 256; ++i) kept += pm_table[i][0] == PM_SHUFFLE;
+        CHECK(kept == 70, "70 single-mode patterns survive (%u)", kept);
+        pm_project_begin(1);
+        for (unsigned i = 0; i < 256; ++i) for (unsigned k = 0; k < 17; ++k) pm_table[i][k] = (uint8_t)(1 + k % 4);
+        pm_project_line("#PLAY_MODES=A01:12341234123412341", 0);
+        memset(pm_table, 0, sizeof pm_table); pm_ready = 0; pm_cur = 0;
+        pm_seq_step(0, 0);
+        kept = 0;
+        for (unsigned i = 0; i < 256; ++i) kept += pm_table[i][16] == 1;
+        CHECK(kept == 31, "31 full rows survive (%u)", kept);
+        pm_project_begin(1);
     }
 
     if (failures) { printf("%d failure(s)\n", failures); return 1; }

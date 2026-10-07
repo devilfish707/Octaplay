@@ -289,19 +289,32 @@ pm_proj_line:
         jmp     0x40088224              | the loop's next line
 
 | 0x400888b2, the writer, at PATTERN_CHANGE_AUTO_SILENCE_TRACKS's line: its
-| value is already pushed (0x400888b0). d3 = the file. Our line first, then
-| the displaced pea 0x400b8244 (6). d0/d1/a0/a1 are free (the stock line
-| reloads them; its value is on the stack). A failed write is not checked
-| here; the stock line that follows checks its own.
+| value is already pushed (0x400888b0). d3 = the file. Our lines first (one
+| per pattern with a mode other than NORMAL), then the displaced pea
+| 0x400b8244 (6). d0/d1/a0/a1 are free (the stock line reloads them; its
+| value is on the stack); d2 is the stock line's buffer, so it is kept. A
+| failed write is not checked here; the stock line that follows checks its
+| own.
 pm_proj_write:
+        move.l  %d2,-(%sp)
+        moveq   #0,%d2                  | pattern index 0..255
+.Lwrite_next:
+        move.l  %d2,-(%sp)
         pea     pm_line
-        jsr     pm_project_format       | d0 := the length
-        addq.l  #4,%sp
+        jsr     pm_project_format       | d0 := the length, 0 = no line
+        addq.l  #8,%sp
+        tst.l   %d0
+        beq.s   .Lwrite_skip
         move.l  %d0,-(%sp)
         pea     pm_line
         move.l  %d3,-(%sp)
         jsr     WRITE
         lea     12(%sp),%sp
+.Lwrite_skip:
+        addq.l  #1,%d2
+        cmpi.l  #256,%d2
+        bne.s   .Lwrite_next
+        move.l  (%sp)+,%d2
         pea     0x400b8244              | displaced
         jmp     0x400888b8
 
@@ -311,6 +324,7 @@ pm_proj_write:
         .balign 4
         .global pm_state, pm_ready, pm_last_transport, pm_last_bank
         .global pm_last_pattern, pm_toast, pm_held_track, pm_restart, pm_line
+        .global pm_table, pm_cur
 pm_state:
         .zero   224
 pm_ready:
@@ -328,4 +342,9 @@ pm_held_track:
 pm_restart:
         .long   0                       | 1 = a transport start since the last step
 pm_line:
-        .zero   40                      | the project line: 12 + 17 + CR LF + NUL
+        .zero   40                      | a project line: 12 + 4 + 17 + CR LF + NUL
+pm_cur:
+        .short  0                       | the row in pm_state.settings + 1, 0 = none
+        .balign 4
+pm_table:
+        .zero   4352                    | 256 patterns x 17 modes (bank * 16 + pattern)

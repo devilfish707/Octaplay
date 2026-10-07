@@ -6,7 +6,7 @@ The Octatrack sequencer's playhead in five directions, shared by every track
 or set per track. ColdFire-only (no DSP code), for original OS 1.40C.
 
 **Experimental.** Built into test images and played on the author's MKII
-(builds 12–16, 3 Oct 2026); the project save is not played yet. Not stress-tested. See [TESTING.md](TESTING.md).
+(builds 12–16, 3 Oct 2026); per-pattern modes and the project save are not played yet. Not stress-tested. See [TESTING.md](TESTING.md).
 
 ![Play Modes thumbnail: normal, reversed, pingpong and shuffle playhead paths over 16 steps](presentation/thumbnail.svg)
 
@@ -46,19 +46,30 @@ A one-second popup shows the result: `ALL PINGPONG` under NORMAL scale mode
 under PER TRACK. Default NORMAL. Changing the mode, playing or stopped,
 takes effect from the next step.
 
-## Saved with the project
+## Per pattern, saved with the project
+
+Every pattern has its own modes: set REVERSED on A01 and PINGPONG on A02,
+and each plays its own when you switch between them (also in a chain). The
+popup and the TRACK + arrow keys work on the pattern that is playing.
 
 The modes are part of the project. They are written to `project.work` as
-one line, `#PLAY_MODES=` and 17 digits (the shared mode, T1–T8, M1–M8;
-0 NORMAL … 4 SHUFFLE), whenever the Octatrack writes the project's settings:
-PROJECT > SAVE (which copies it to `project.strd`), SYNC TO CARD, and
-PROJECT > CHANGE. Loading or reloading a project sets them from that line; a
-project without it (older, or saved on stock firmware) loads as all NORMAL.
-They also survive a power cycle, like CHAIN AFTER, in battery-backed RAM.
-Only the modes are saved: every track still starts from its first step.
+one line per pattern that is not all NORMAL, `#PLAY_MODES=A01:` and 17
+digits (the shared mode, T1–T8, M1–M8; 0 NORMAL … 4 SHUFFLE), whenever the
+Octatrack writes the project's settings: PROJECT > SAVE (which copies it to
+`project.strd`), SYNC TO CARD, and PROJECT > CHANGE. Loading or reloading a
+project sets them from those lines; a project without them (older, or saved
+on stock firmware) loads as all NORMAL. Build 17's single line is read as
+every pattern's. Only the modes are saved: every track still starts from
+its first step.
 
-Stock firmware reads the line as a comment and ignores it, so these projects
-still open on a stock OS (and lose the line at their next save there).
+They also survive a power cycle, like CHAIN AFTER, in battery-backed RAM.
+That space is small: about 70 patterns with one mode set, or about 30 with
+every track set, fit there. Patterns beyond that still play and save, but
+lose their modes at a power-off (load the saved project to get them back).
+
+Stock firmware reads the lines as comments and ignores them, so these
+projects still open on a stock OS (and lose the lines at their next save
+there).
 
 ## Usage
 
@@ -100,6 +111,7 @@ it its own CHAIN AFTER length). This is stock behaviour.
 - Base: original OS 1.40C. Played on an MKII; the MKI shares the sequencer
   and key map layout but is untested.
 - PROJECT > NEW may keep the previous project's modes (untested).
+- Copying a pattern (or clearing one) does not copy (or clear) its modes.
 - Composes with EUCLID and SCALE QUANTIZER by design (their stubs return
   into this module's sites). DIRECT JUMP, OCTAKIT and the KYOTI modules hook the same tick
   handler at other sites; combinations are untested.
@@ -130,7 +142,7 @@ it. Hardware results: [TESTING.md](TESTING.md).
 | file | what |
 |---|---|
 | `playmode.h`, `playmode.c` | the engine: pure, freestanding C |
-| `adapter.c` | firmware glue: sequencer bytes, restarts, lengths, popup text, project line |
+| `adapter.c` | firmware glue: sequencer bytes, restarts, lengths, popup text, per-pattern table, project lines, battery copy |
 | `hooks.s` | the 14 detour stubs, the register-saving entries, DRAM state |
 | `generate.py` | compiles and assembles the three into the linked unit `playmodes.s` |
 | `verify.py`, `test_*.c` | host tests |

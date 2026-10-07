@@ -30,9 +30,9 @@ Flashing modified firmware is at your own risk.
   with it. The trig LEDs, live recording and lock editing follow the step
   you hear. Tempo, lengths, pattern changes and chains stay stock.
 - PLAY and pattern changes start every track from its first step again.
-- The modes are saved with the project (a `#PLAY_MODES=` line in
-  `project.work`, carried to `project.strd` by SAVE) and survive a power
-  cycle.
+- Every pattern keeps its own modes. They are saved with the project
+  (`#PLAY_MODES=` lines in `project.work`, carried to `project.strd` by
+  SAVE) and survive a power cycle.
 
 Full description, controls and limitations: [playmodes/README.md](playmodes/README.md).
 

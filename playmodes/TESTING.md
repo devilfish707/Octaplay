@@ -28,11 +28,16 @@ What the host suites cover:
   PER TRACK, cut to the steps MASTER LENGTH lets the track reach, at
   different track scales; INF and 0 do not cut.
 - The display (the UI's step query), the popup text, held TRACK + arrows.
-- The project line: its exact text, a storing load pass starting from
-  NORMAL, the parse-only pass storing nothing, other `#` lines left alone,
-  short lines and bad digits, the round trip, battery RAM nibbles (written
-  on every key change and load, read back after a simulated power cycle,
-  garbage read as NORMAL, nothing written past `0x100b14ea`).
+- Per pattern: two patterns keep their own modes across switches (the
+  build 17 report: A01 REVERSED, A02 changed, back to A01 must be
+  REVERSED).
+- The project lines: their exact text, one per pattern that is not all
+  NORMAL, a storing load pass starting from NORMAL, the parse-only pass
+  storing nothing, other `#` lines and bad pattern names left alone, short
+  lines and bad digits, build 17's line applied to every pattern.
+- Battery RAM: the table back after a simulated power cycle, a damaged copy
+  read as all NORMAL, capacity (70 one-mode patterns, 31 full rows),
+  nothing written outside its two ranges.
 
 ## Hardware (author's MKII, 3 Oct 2026)
 
@@ -46,8 +51,10 @@ Test images `playmodes-test`, builds 12–16, on 1.40C with stock effects.
 | 15 | Restart from the four transport-start sites: PINGPONG bounces and restarts on PLAY. Found: NORMAL → STOP → REVERSED → PLAY fired step 1's trig once at step 16's place. |
 | 16 | Mode changes rebuild the prepared step; stopped preparation uses the next run. The phantom is gone. Longer patterns (32/48/64), PER TRACK with MASTER LENGTH INF and various lengths and modes, pattern changes across banks 1–2 and tempo changes all behaved. |
 
-Next build (17): the MASTER LENGTH cut (REVERSED mirrors what NORMAL plays
-when MASTER LENGTH is shorter than a track) and the project save.
+| 17 | Modes saved with the project (one set for all patterns). Found: the set was shared by every pattern: A01 REVERSED, A02 changed, back on A01 it played A02's mode (as designed then). |
+
+Next build (18): per-pattern modes, their project lines and battery copy;
+the MASTER LENGTH cut.
 
 ## Not yet
 

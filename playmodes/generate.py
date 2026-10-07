@@ -15,7 +15,7 @@ import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 FLAGS = ['-mcpu=5475', '-msoft-float', '-O2', '-ffreestanding', '-fno-builtin',
-         '-fno-common', '-fno-jump-tables', '-fno-asynchronous-unwind-tables',
+         '-fno-common', '-fno-tree-loop-distribute-patterns', '-fno-jump-tables', '-fno-asynchronous-unwind-tables',
          '-fno-ident', '-fomit-frame-pointer',
          '-fno-tree-loop-distribute-patterns', '-std=c11', '-Wall', '-Wextra',
          '-Werror']
