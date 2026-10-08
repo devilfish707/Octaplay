@@ -187,6 +187,18 @@ int main(void) {
         pm_seq_step(4, 0);
         for (unsigned r = 1; r < 10; ++r)
             CHECK(pm_seq_step(4, r) == 9 - r, "T5 learnt 10 steps: %u -> %u", r, 9 - r);
+        /* MASTER LENGTH 16 over a 14-step track: stock plays 0..13, 0, 1,
+         * then restarts every track. The short pass is not its length:
+         * REVERSED keeps playing 14..1, 14, 13 (the user's report). */
+        p[0x91a * 4 + 0x50] = 14; p[0x8e50] = 0; p[0x8e51] = 16; p[0x8e52] = 2;
+        pm_table[1 * 16 + 3][5] = PM_REVERSE; pm_cur = 0; pm_restart = 1;
+        static const unsigned stock[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,0,1};
+        for (unsigned pass = 0; pass < 4; ++pass)
+            for (unsigned i = 0; i < 16; ++i) {
+                unsigned got = pm_seq_step(4, stock[i]);
+                CHECK(got == 13 - stock[i], "pass %u, stock step %u -> %u (got %u)", pass, stock[i], 13 - stock[i], got);
+            }
+        p[0x8e50] = 0xff; p[0x8e51] = 0xff;
         /* NORMAL is stock, whatever the length. */
         pm_table[1 * 16 + 3][5] = PM_NORMAL; pm_cur = 0;
         for (unsigned r = 0; r < 20; ++r)

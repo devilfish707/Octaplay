@@ -245,8 +245,8 @@ static void pm_sync(void) {
  * (0x400a3ca4: +0x50 under PER TRACK, 0x8e53 under NORMAL), but a wrong
  * guess is worse than none: REVERSED and the rest would map steps the
  * playhead never reaches, or wrap early. So the playhead is watched too:
- * each track keeps the highest step seen in this pass and the length of the
- * last complete pass (PmTrack.reserved[1] / [0]), and those win over the
+ * each track keeps the highest step seen in this pass and the longest
+ * complete pass (PmTrack.reserved[1] / [0]), and those win over the
  * pattern bytes until the bytes change (an edit, a scale-mode switch, a
  * pattern change), which drops what was learnt. */
 extern uint8_t pm_comp[PM_TRACKS];   /* the computed length last seen, per track */
@@ -273,7 +273,10 @@ static void pm_learn(unsigned track, unsigned raw) {
     if (track >= PM_TRACKS || raw >= PM_MAX_LEN) return;
     PmTrack *t = &pm_state.tracks[track];
     if (t->started && raw < t->last_raw && t->reserved[1]) {
-        t->reserved[0] = t->reserved[1];      /* a pass ended: its length */
+        /* A pass ended. Keep the longest pass: MASTER LENGTH restarts a
+         * track mid-way (a 14-step track under master 16 plays 14, then 2,
+         * then 14 ...), and those short passes are not its length. */
+        if (t->reserved[1] > t->reserved[0]) t->reserved[0] = t->reserved[1];
         t->reserved[1] = 0;
     }
     if (raw + 1 > t->reserved[1]) t->reserved[1] = (uint8_t)(raw + 1);
