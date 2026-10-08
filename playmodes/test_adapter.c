@@ -106,7 +106,8 @@ int main(void) {
      * the scheduler across the pattern end it keeps the previous pass. */
     set_playing(0, 0);                 /* NORMAL scale, length 8, shared mode */
     key(0, +1);                        /* REVERSED -> PINGPONG */
-    pm_seq_step(0, 0);                 /* the reset after the switch */
+    /* One call per step: the same step twice is a new pass (see
+     * pm_seq_step), so the first step after the switch is step 0 itself. */
     for (unsigned r = 0; r < 8; ++r) {
         pm_seq_step(0, r);
         CHECK(pm_show(0, r) == r, "pingpong pass 0: display %u", r);
@@ -210,6 +211,24 @@ int main(void) {
                     CHECK(got == want, "mode %u loop %u step %u: %u, want %u", mode, loop, i, got, want);
                 }
         }
+        /* 15 steps under MASTER LENGTH 16: stock 0..14, 0, then restarts at
+         * 0 (the same step twice). PINGPONG: 1..15, 14, then 1 again. */
+        p[0x91a * 4 + 0x50] = 15;
+        static const unsigned stock15[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,0};
+        static const unsigned pp15[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,13};
+        static const unsigned pp215[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,14};
+        static const unsigned rev15[] = {14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,14};
+        const unsigned modes[] = {PM_PINGPONG, PM_PINGPONG2, PM_REVERSE};
+        const unsigned *want15[] = {pp15, pp215, rev15};
+        for (unsigned k = 0; k < 3; ++k) {
+            pm_table[1 * 16 + 3][5] = (uint8_t)modes[k]; pm_cur = 0; pm_restart = 1;
+            for (unsigned loop = 0; loop < 4; ++loop)
+                for (unsigned i = 0; i < 16; ++i) {
+                    unsigned got = pm_seq_step(4, stock15[i]);
+                    CHECK(got == want15[k][i], "15/16 mode %u loop %u step %u: %u, want %u", modes[k], loop, i, got, want15[k][i]);
+                }
+        }
+        p[0x91a * 4 + 0x50] = 14;
         p[0x8e50] = 0xff; p[0x8e51] = 0xff;
         /* NORMAL is stock, whatever the length. */
         pm_table[1 * 16 + 3][5] = PM_NORMAL; pm_cur = 0;

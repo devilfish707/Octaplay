@@ -275,7 +275,7 @@ static unsigned pm_learn(unsigned track, unsigned raw) {
     if (track >= PM_TRACKS || raw >= PM_MAX_LEN) return 0;
     PmTrack *t = &pm_state.tracks[track];
     unsigned master_restart = 0;
-    if (t->started && raw < t->last_raw && t->reserved[1]) {
+    if (t->started && raw <= t->last_raw && t->reserved[1]) {
         master_restart = t->reserved[0] && t->reserved[1] < t->reserved[0];
         /* A pass ended. Keep the longest pass: MASTER LENGTH restarts a
          * track mid-way (a 14-step track under master 16 plays 14, then 2,
@@ -298,9 +298,17 @@ static unsigned pm_is_normal(unsigned track) {
 unsigned pm_seq_step(unsigned track, unsigned raw) {
     pm_sync();
     unsigned len = pm_effective_length(track);
+    /* The tick calls this once per track step (0x400a2d6a runs only when
+     * the track's tick counter is at a step), so the same step again is a
+     * new pass: a 15-step track under MASTER LENGTH 16 plays 0..14, 0 and
+     * then restarts at 0. The engine treats a repeat as a re-ask, so the
+     * pass is counted here. */
+    unsigned again = track < PM_TRACKS && pm_state.tracks[track].started
+                     && raw == pm_state.tracks[track].last_raw;
     unsigned master_restart = pm_learn(track, raw);
     len = pm_effective_length(track);
     pm_advance(&pm_state, track, raw, len);
+    if (again) ++pm_state.tracks[track].cycle;
     if (master_restart && track < PM_TRACKS) {
         /* MASTER LENGTH starts every track over, as PLAY does: the bounce
          * starts again from step 1 (REVERSED from its last step anyway);
