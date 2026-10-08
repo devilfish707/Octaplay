@@ -30,6 +30,10 @@ What the host suites cover:
   PER TRACK, cut to the steps MASTER LENGTH lets the track reach, at
   different track scales; INF and 0 do not cut.
 - The display (the UI's step query), the popup text, held TRACK + arrows.
+- The playhead wins over the pattern bytes: pattern bytes say 10 but stock
+  plays 16, and the reverse; a length edit is taken at once; NORMAL passes
+  every step through, also past the computed length; MASTER LENGTH uses
+  the MASTER SCALE (`0x8e52`), not the NORMAL-mode scale.
 - Per pattern: two patterns keep their own modes across switches (the
   build 17 report: A01 REVERSED, A02 changed, back to A01 must be
   REVERSED).
@@ -60,7 +64,11 @@ Test images `playmodes-test`, builds 12–16, on 1.40C with stock effects.
 
 | 17 | Modes saved with the project (one set for all patterns). Found: the set was shared by every pattern: A01 REVERSED, A02 changed, back on A01 it played A02's mode (as designed then). |
 
-Next build (18): per-pattern modes, their project lines, the whole table
+| 18–19 | Per-pattern modes, battery table, copy / paste / undo, clear, PINGPONG 2: about 15 minutes, all working. Found: NORMAL scale mode LEN 10, switched to PER TRACK (FUNC + SCALE shows 16/16): still played 10 steps. |
+
+Next build (20): the length follows the stock playhead (learnt from where it wraps) and the PER TRACK master scale is read from `0x8e52`; NORMAL passes the step through untouched.
+
+Earlier plan (18): per-pattern modes, their project lines, the whole table
 in battery RAM, pattern copy / paste / undo, clear pattern, PINGPONG 2; the
 MASTER LENGTH cut.
 

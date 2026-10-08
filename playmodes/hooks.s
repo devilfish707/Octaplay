@@ -357,7 +357,7 @@ pm_clear_pattern:
         .balign 4
         .global pm_state, pm_ready, pm_last_transport, pm_last_bank
         .global pm_last_pattern, pm_toast, pm_held_track, pm_restart, pm_line
-        .global pm_table, pm_cur, pm_clip, pm_undo
+        .global pm_table, pm_cur, pm_clip, pm_undo, pm_comp
 pm_state:
         .zero   224
 pm_ready:
@@ -386,3 +386,5 @@ pm_clip:
 pm_undo:
         .zero   17                      | ... and in its undo buffer
         .balign 4
+pm_comp:
+        .zero   16                      | per track: the computed length last seen

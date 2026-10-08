@@ -16,6 +16,7 @@ char pm_toast[16];
 uint8_t pm_table[256][17];
 uint16_t pm_cur;
 uint8_t pm_clip[17], pm_undo[17];
+uint8_t pm_comp[16];
 
 unsigned pm_seq_step(unsigned track, unsigned raw);
 unsigned pm_seq_peek(unsigned track, unsigned raw);
@@ -136,7 +137,8 @@ int main(void) {
     {
         uint8_t *p = pattern(1, 3);
         uint8_t *t1 = p + 0 * 0x91a, *t2 = p + 1 * 0x91a, *t3 = p + 2 * 0x91a;
-        p[0x8e54] = 2;                          /* master scale 1X (6 ticks) */
+        p[0x8e52] = 2;                          /* MASTER SCALE 1X (6 ticks) */
+        p[0x8e54] = 0;                          /* the NORMAL-mode scale (2X) must not count */
         t1[0x50] = 20; t1[0x51] = 2;            /* T1: 20 steps at 1X */
         t2[0x50] = 20; t2[0x51] = 1;            /* T2: 20 steps at 3/2X (4 ticks) */
         t3[0x50] = 5;  t3[0x51] = 2;            /* T3: 5 steps, shorter than the master */
@@ -161,6 +163,38 @@ int main(void) {
         for (unsigned r = 0; r < 16; ++r)
             CHECK(pm_seq_step(0, r) == 15 - r, "T1 reversed under master 16: %u -> %u", r, 15 - r);
         p[0x8e50] = 0xff; p[0x8e51] = 0xff;
+    }
+
+    /* The playhead wins over the pattern bytes: the reported case (NORMAL
+     * LEN 10, switched to PER TRACK) seen from both sides. */
+    {
+        uint8_t *p = pattern(1, 3);
+        p[0x8e55] = 1; p[0x8e50] = 0xff; p[0x8e51] = 0xff;
+        p[0x91a * 4 + 0x50] = 10; p[0x91a * 4 + 0x51] = 2;   /* T5: bytes say 10 */
+        set_playing(1, 3);
+        pm_table[1 * 16 + 3][5] = PM_REVERSE;                 /* B04's T5 REVERSED */
+        pm_cur = 0; pm_restart = 1;
+        for (unsigned r = 0; r < 16; ++r) pm_seq_step(4, r);  /* stock plays 16 */
+        pm_seq_step(4, 0);                                    /* and wraps */
+        for (unsigned r = 1; r < 16; ++r)
+            CHECK(pm_seq_step(4, r) == 15 - r, "T5 learnt 16 steps: %u -> %u", r, 15 - r);
+        CHECK(pm_show(4, 3) == 12, "the LEDs agree (%u)", pm_show(4, 3));
+        p[0x91a * 4 + 0x50] = 24;                             /* an edit: learnt length dropped */
+        CHECK(pm_seq_peek(4, 0) == 23, "an edited length is taken at once (%u)", pm_seq_peek(4, 0));
+        p[0x91a * 4 + 0x50] = 16;
+        pm_restart = 1;
+        for (unsigned r = 0; r < 10; ++r) pm_seq_step(4, r);  /* bytes say 16, stock wraps at 10 */
+        pm_seq_step(4, 0);
+        for (unsigned r = 1; r < 10; ++r)
+            CHECK(pm_seq_step(4, r) == 9 - r, "T5 learnt 10 steps: %u -> %u", r, 9 - r);
+        /* NORMAL is stock, whatever the length. */
+        pm_table[1 * 16 + 3][5] = PM_NORMAL; pm_cur = 0;
+        for (unsigned r = 0; r < 20; ++r)
+            CHECK(pm_seq_step(4, r) == r && pm_show(4, r) == r && pm_seq_peek(4, r) == r, "NORMAL passes %u through", r);
+        p[0x91a * 4 + 0x50] = 16;
+        for (unsigned i = 0; i < 17; ++i) pm_table[1 * 16 + 3][i] = 0;
+        pm_cur = 0;
+        set_playing(0, 0);
     }
 
     /* Per pattern: each pattern keeps its own modes. */
