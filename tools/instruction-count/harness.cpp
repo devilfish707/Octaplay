@@ -59,6 +59,7 @@ int main() {
 				uint64_t n = call(S_PM_STEP_ENTRY, {t, raw});
 				if (n > worst) { worst = n; wl = len; wm = mode; }
 				uint64_t s = call(S_PM_SHOW_ENTRY, {t, raw}); if (s > worstShow) worstShow = s;
+				for (unsigned o = 2; o < 4; ++o) { uint64_t f = call(S_PM_SHOW_ENTRY, {t, (raw + o) % len}); if (f > worstShow) worstShow = f; }	// not among the last two steps: computed
 				uint64_t k = call(S_PM_PEEK_ENTRY, {t, raw + 1}); if (k > worstPeek) worstPeek = k;
 			}
 		}
