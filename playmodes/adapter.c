@@ -268,11 +268,15 @@ static unsigned pm_effective_length(unsigned track) {
     return len;
 }
 
-/* One stock step on `track`: learn the pass length from the playhead. */
-static void pm_learn(unsigned track, unsigned raw) {
-    if (track >= PM_TRACKS || raw >= PM_MAX_LEN) return;
+/* One stock step on `track`: learn the pass length from the playhead.
+ * Returns 1 when this step starts over after a pass shorter than the
+ * track's length: MASTER LENGTH restarting every track. */
+static unsigned pm_learn(unsigned track, unsigned raw) {
+    if (track >= PM_TRACKS || raw >= PM_MAX_LEN) return 0;
     PmTrack *t = &pm_state.tracks[track];
+    unsigned master_restart = 0;
     if (t->started && raw < t->last_raw && t->reserved[1]) {
+        master_restart = t->reserved[0] && t->reserved[1] < t->reserved[0];
         /* A pass ended. Keep the longest pass: MASTER LENGTH restarts a
          * track mid-way (a 14-step track under master 16 plays 14, then 2,
          * then 14 ...), and those short passes are not its length. */
@@ -280,6 +284,7 @@ static void pm_learn(unsigned track, unsigned raw) {
         t->reserved[1] = 0;
     }
     if (raw + 1 > t->reserved[1]) t->reserved[1] = (uint8_t)(raw + 1);
+    return master_restart;
 }
 
 /* NORMAL plays exactly what stock plays, whatever the length. */
@@ -293,9 +298,16 @@ static unsigned pm_is_normal(unsigned track) {
 unsigned pm_seq_step(unsigned track, unsigned raw) {
     pm_sync();
     unsigned len = pm_effective_length(track);
-    pm_learn(track, raw);
+    unsigned master_restart = pm_learn(track, raw);
     len = pm_effective_length(track);
     pm_advance(&pm_state, track, raw, len);
+    if (master_restart && track < PM_TRACKS) {
+        /* MASTER LENGTH starts every track over, as PLAY does: the bounce
+         * starts again from step 1 (REVERSED from its last step anyway);
+         * RANDOM and SHUFFLE go on with a new pass, a new order. */
+        unsigned mode = pm_mode(&pm_state, track, pm_per_track());
+        if (mode == PM_PINGPONG || mode == PM_PINGPONG2) pm_state.tracks[track].cycle = 0;
+    }
     if (track < PM_TRACKS && pm_is_normal(track)) return raw;
     return pm_lookup(&pm_state, track, raw, len, pm_per_track());
 }

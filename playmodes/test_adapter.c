@@ -198,6 +198,18 @@ int main(void) {
                 unsigned got = pm_seq_step(4, stock[i]);
                 CHECK(got == 13 - stock[i], "pass %u, stock step %u -> %u (got %u)", pass, stock[i], 13 - stock[i], got);
             }
+        /* PINGPONG and PINGPONG 2 start the bounce again at each master
+         * restart; within the master loop the bounce turns at step 14. */
+        static const unsigned pp[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,12,11};
+        static const unsigned pp2[] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,13,12};
+        for (unsigned mode = PM_PINGPONG; mode <= PM_PINGPONG2; mode += PM_PINGPONG2 - PM_PINGPONG) {
+            pm_table[1 * 16 + 3][5] = (uint8_t)mode; pm_cur = 0; pm_restart = 1;
+            for (unsigned loop = 0; loop < 4; ++loop)
+                for (unsigned i = 0; i < 16; ++i) {
+                    unsigned got = pm_seq_step(4, stock[i]), want = (mode == PM_PINGPONG ? pp : pp2)[i];
+                    CHECK(got == want, "mode %u loop %u step %u: %u, want %u", mode, loop, i, got, want);
+                }
+        }
         p[0x8e50] = 0xff; p[0x8e51] = 0xff;
         /* NORMAL is stock, whatever the length. */
         pm_table[1 * 16 + 3][5] = PM_NORMAL; pm_cur = 0;

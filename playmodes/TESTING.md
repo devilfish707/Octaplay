@@ -68,7 +68,11 @@ Test images `playmodes-test`, builds 12–16, on 1.40C with stock effects.
 
 | 20 | Length learnt from the playhead: the NORMAL → PER TRACK case fixed. Found: PER TRACK, track 14 steps, MASTER LENGTH 16, REVERSED: started on step 5 and looped steps 1–2 (the master restart's 2-step pass was taken as the length). |
 
-Next build (21): the longest pass is kept, so MASTER LENGTH's short passes no longer count as the track's length.
+| 21 | Longest pass kept: REVERSED under MASTER LENGTH fixed. Found: PINGPONG under MASTER LENGTH 16 (14-step track) drifts instead of starting over at each master loop. |
+
+Next build (22): a MASTER LENGTH restart (a pass shorter than the track's length) starts PINGPONG and PINGPONG 2 over from step 1; RANDOM and SHUFFLE start a new order, REVERSED its last step.
+
+Earlier plan (21): the longest pass is kept, so MASTER LENGTH's short passes no longer count as the track's length.
 
 Earlier plan (20): the length follows the stock playhead (learnt from where it wraps) and the PER TRACK master scale is read from `0x8e52`; NORMAL passes the step through untouched.
 
