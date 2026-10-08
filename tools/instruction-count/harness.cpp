@@ -63,6 +63,18 @@ int main() {
 			}
 		}
 	}
+	// MASTER LENGTH 16 over 14-step tracks: the master-restart path, every mode
+	{
+		uint64_t wm16 = 0;
+		for (unsigned mode = 0; mode < 6; ++mode) {
+			pattern(0, 0, 1, 14, 16);
+			for (unsigned i = 0; i < 17; ++i) w8(S_PM_TABLE + i, mode);
+			m.write16(S_PM_CUR, 0); w32(S_PM_RESTART, 1);
+			for (unsigned loop = 0; loop < 6; ++loop) for (unsigned i = 0; i < 16; ++i) for (unsigned t = 0; t < 16; ++t) {
+				uint64_t n = call(S_PM_STEP_ENTRY, {t, i < 14 ? i : i - 14}); if (n > wm16) wm16 = n; }
+		}
+		printf("master-restart case worst one-track step: %llu\n", (unsigned long long)wm16);
+	}
 	// per mode, and SHUFFLE over many more runs (seeds) at every length
 	for (unsigned mode = 0; mode < 6; ++mode) {
 		uint64_t wmode = 0;
