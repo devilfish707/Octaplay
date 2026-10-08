@@ -17,6 +17,7 @@ uint8_t pm_table[256][17];
 uint16_t pm_cur;
 uint8_t pm_clip[17], pm_undo[17];
 uint8_t pm_comp[16];
+uint8_t pm_hist[16][4];
 
 unsigned pm_seq_step(unsigned track, unsigned raw);
 unsigned pm_seq_peek(unsigned track, unsigned raw);
@@ -228,6 +229,22 @@ int main(void) {
                     CHECK(got == want15[k][i], "15/16 mode %u loop %u step %u: %u, want %u", modes[k], loop, i, got, want15[k][i]);
                 }
         }
+        /* The LEDs trail the tick by one call: while step 16 shows, the
+         * tick has already handled the restart (0 again). They must show
+         * what plays: PINGPONG 2 ... 15, 15, 1, 2. */
+        pm_table[1 * 16 + 3][5] = PM_PINGPONG2; pm_cur = 0; pm_restart = 1;
+        unsigned prev = 0;
+        for (unsigned loop = 0; loop < 3; ++loop)
+            for (unsigned i = 0; i < 16; ++i) {
+                unsigned played = pm_seq_step(4, stock15[i]);
+                if (loop || i) {
+                    unsigned shown = pm_show(4, stock15[(i + 15) % 16]);
+                    CHECK(shown == prev, "15/16 LEDs loop %u step %u: %u, want %u", loop, i, shown, prev);
+                }
+                CHECK(pm_show(4, stock15[i]) == played || i == 0,
+                      "15/16 LEDs caught up at step %u", i);
+                prev = played;
+            }
         p[0x91a * 4 + 0x50] = 14;
         p[0x8e50] = 0xff; p[0x8e51] = 0xff;
         /* NORMAL is stock, whatever the length. */

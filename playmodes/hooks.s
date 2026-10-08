@@ -388,3 +388,5 @@ pm_undo:
         .balign 4
 pm_comp:
         .zero   16                      | per track: the computed length last seen
+pm_hist:
+        .zero   64                      | per track: the last two steps played, for the LEDs

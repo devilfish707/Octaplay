@@ -226,6 +226,18 @@ static void pm_ensure(void) {
     pm_load_current();
 }
 
+/* The trig LEDs ask after the tick has already handled the next step (it
+ * schedules a step ahead), so they show a step one call behind. Each track
+ * keeps its last two calls: raw + 1 (0 = none) and the step played, newest
+ * first. A raw both calls share (0, 0 at a MASTER LENGTH restart) is the
+ * older one: the display is behind. */
+extern uint8_t pm_hist[PM_TRACKS][4];
+
+static void pm_hist_clear(void) {
+    for (unsigned t = 0; t < PM_TRACKS; ++t)
+        for (unsigned k = 0; k < 4; ++k) pm_hist[t][k] = 0;
+}
+
 static void pm_sync(void) {
     pm_ensure();
     unsigned transport = U32(SEQ_TRANSPORT) == 1;
@@ -234,6 +246,7 @@ static void pm_sync(void) {
         || bank != pm_last_bank || pattern != pm_last_pattern) {
         pm_restart = 0;
         pm_reset_all(&pm_state);
+        pm_hist_clear();
     }
     pm_last_transport = (uint8_t)transport;
     pm_last_bank = (uint8_t)bank;
@@ -251,11 +264,13 @@ static void pm_sync(void) {
  * pattern change), which drops what was learnt. */
 extern uint8_t pm_comp[PM_TRACKS];   /* the computed length last seen, per track */
 
+
 static void pm_learn_reset(unsigned track, unsigned computed) {
     PmTrack *t = &pm_state.tracks[track];
     pm_comp[track] = (uint8_t)computed;
     t->reserved[0] = 0;
     t->reserved[1] = 0;
+    for (unsigned k = 0; k < 4; ++k) pm_hist[track][k] = 0;
 }
 
 static unsigned pm_effective_length(unsigned track) {
@@ -316,8 +331,13 @@ unsigned pm_seq_step(unsigned track, unsigned raw) {
         unsigned mode = pm_mode(&pm_state, track, pm_per_track());
         if (mode == PM_PINGPONG || mode == PM_PINGPONG2) pm_state.tracks[track].cycle = 0;
     }
-    if (track < PM_TRACKS && pm_is_normal(track)) return raw;
-    return pm_lookup(&pm_state, track, raw, len, pm_per_track());
+    if (track >= PM_TRACKS) return raw;
+    unsigned step = pm_is_normal(track) ? raw
+                  : pm_lookup(&pm_state, track, raw, len, pm_per_track());
+    uint8_t *h = pm_hist[track];
+    h[2] = h[0]; h[3] = h[1];
+    h[0] = (uint8_t)(raw + 1); h[1] = (uint8_t)step;
+    return step;
 }
 
 static unsigned pm_playing(void) { return U32(SEQ_TRANSPORT) == 1; }
@@ -352,6 +372,9 @@ unsigned pm_show(unsigned track, unsigned raw) {
     if (!pm_playing())
         return pm_lookup_next_run(&pm_state, track, len ? raw % len : raw, len,
                                   pm_per_track());
+    const uint8_t *h = pm_hist[track];
+    if (h[2] && raw + 1 == h[2]) return h[3];   /* behind the tick: the older call */
+    if (h[0] && raw + 1 == h[0]) return h[1];
     const PmTrack *t = &pm_state.tracks[track];
     uint32_t cycle = t->cycle;
     if (t->started && raw > t->last_raw && cycle) --cycle;
@@ -374,6 +397,7 @@ void pm_key_updown(unsigned track, int delta) {
     unsigned per_track = pm_per_track();
     if (delta) {
         pm_ui_step(&pm_state, track, delta, per_track);
+        pm_hist_clear();                /* the steps it recorded were the old mode's */
         pm_store_current();
     }
     pm_ui_label(&pm_state, track, per_track, pm_toast);
