@@ -23,6 +23,8 @@ project save are not yet played (build 17). Not stress-tested (TESTING.md).
   0x4009b2b0  UI step(track): trig LEDs, live recording, lock editing
   0x40040250  TRACK key handler: remember which TRACK key is held
   0x400491a0  UP / DOWN handler: with a TRACK key held, change the mode
+  0x40060cfc  trig keys (outside GRID REC): held while playing in REPEAT,
+              the track repeats those steps
 
   0x4009c3da, 0x400a2210, 0x400a24d6, 0x400a27e8  transport starts: restart
 
@@ -84,6 +86,8 @@ MODULE = Module(
                "playmodes", "pm_track_key", "remember which TRACK key is held", kind="jmp"),
         Detour(0x400491a0, stock_guard(0x400491a0, 6, "25f6cf58764096a92fba2355b3a003ad25d064d44e1e91102deb6abcadbed9d7"),
                "playmodes", "pm_arrow_key", "TRACK held + UP/DOWN: change the play mode", kind="jmp"),
+        Detour(0x40060cfc, stock_guard(0x40060cfc, 6, "24a4ac4652b0df33c702278d799161373e773858168f015ce11c8ae2bd116826"),
+               "playmodes", "pm_trig_stub", "trig keys held while playing in REPEAT: repeat those steps", kind="jmp"),
         Detour(0x400866d4, stock_guard(0x400866d4, 6, "2fd04d71c59a1c9023b7b2b5ad2cf5a7445d464be69c48340b45e33b9ad07056"),
                "playmodes", "pm_proj_begin", "project load: a storing pass starts from NORMAL", kind="jmp"),
         Detour(0x400867aa, stock_guard(0x400867aa, 6, "b304cfb26163106388891990b3c67d3fe0b7f927d6a9f973d8d93d26d1171259"),

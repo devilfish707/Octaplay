@@ -2,11 +2,13 @@
 
 Version: `0.1.0-experimental` · author: [@devilfish707](https://github.com/devilfish707)
 
-The Octatrack sequencer's playhead in five directions, shared by every track
-or set per track. ColdFire-only (no DSP code), for original OS 1.40C.
+The Octatrack sequencer's playhead in five directions, plus STEP REPEAT
+(hold trig keys to loop those steps), shared by every track or set per
+track. ColdFire-only (no DSP code), for original OS 1.40C.
 
 **Experimental.** Built into test images and played on the author's MKII
-(builds 12–16, 3 Oct 2026); per-pattern modes and the project save are not played yet. Not stress-tested. See [TESTING.md](TESTING.md).
+(builds 12–16, 3 Oct 2026); per-pattern modes and the project save are not played yet. Not stress-tested. STEP REPEAT is host-tested and
+run under the ColdFire port only, not yet played on a unit. See [TESTING.md](TESTING.md).
 
 ![Play Modes thumbnail: normal, reversed, pingpong and shuffle playhead paths over 16 steps](presentation/thumbnail.svg)
 
@@ -20,6 +22,7 @@ or set per track. ColdFire-only (no DSP code), for original OS 1.40C.
 | PINGPONG 2 | 1 … 16 16 … 1, 1 … 16 …: the end steps play twice |
 | RANDOM | any step each time; a step can repeat |
 | SHUFFLE | every step once per pass, in a new order every pass |
+| REPEAT | NORMAL until trig keys are held while playing; then only the held steps, in step order, round and round (hold 5 and 8: 5 8 5 8 …) |
 
 With the pattern's SCALE MODE on NORMAL, one mode is shared by every track,
 and RANDOM / SHUFFLE move all tracks through the same order. With SCALE MODE
@@ -34,15 +37,40 @@ parameter locks. Tempo, track length and scale, the pattern end, chains and
 CHAIN AFTER stay stock. The trig LEDs, live recording and lock editing
 follow the step you hear.
 
+## STEP REPEAT
+
+Set a track to REPEAT and it plays as NORMAL until you hold trig keys while
+the sequencer runs. From the track's next step it then plays only the held
+steps, in step order, one per track step: hold [TRIG 5] and [TRIG 8] and
+the track plays 5 8 5 8 …; hold one key and that step plays every step.
+The stock playhead keeps counting underneath, so when you let go the track
+goes on from the step it would have reached had you never held anything.
+A key pressed or let go mid-loop joins or leaves the loop in its place
+(holding 1 3 6, let go of 3 just after it played: 6 comes next).
+
+- Which tracks: under NORMAL scale mode every track repeats, audio and MIDI
+  alike; under PER TRACK, the tracks set to REPEAT. A press is taken when
+  the current track (MIDI mode: M1–M8) is in REPEAT.
+- When: only while the sequencer plays, with the trig keys in TRACKS trig
+  mode, GRID REC and LIVE REC off. In every other case the trig keys do
+  what they do on stock (see Compatibility and limitations).
+- Steps past a track's length are left out for that track. On patterns
+  longer than 16 steps, the keys name the steps of the page the track's
+  playhead is on when the hold starts.
+- STOP, PLAY and a pattern change end the loop; keys still held start a
+  new one from their lowest step.
+
 ## Controls
 
 | action | result |
 |---|---|
 | hold [TRACK n], press [UP] | the mode one row up the list (towards NORMAL) |
-| hold [TRACK n], press [DOWN] | the mode one row down (towards SHUFFLE) |
+| hold [TRACK n], press [DOWN] | the mode one row down (towards REPEAT) |
+| REPEAT, playing: hold [TRIG] keys | the track loops the held steps |
+| REPEAT: let go of the [TRIG] keys | the track goes on where the stock playhead is |
 
-The list is NORMAL, REVERSED, PINGPONG, PINGPONG 2, RANDOM, SHUFFLE and does
-not wrap.
+The list is NORMAL, REVERSED, PINGPONG, PINGPONG 2, RANDOM, SHUFFLE, REPEAT
+and does not wrap.
 A one-second popup shows the result: `ALL PINGPONG` under NORMAL scale mode
 (any TRACK key changes the shared mode), `T3 PINGPONG` or `M2 REVERSED`
 under PER TRACK. Default NORMAL. Changing the mode, playing or stopped,
@@ -56,7 +84,8 @@ popup and the TRACK + arrow keys work on the pattern that is playing.
 
 The modes are part of the project. They are written to `project.work` as
 one line per pattern that is not all NORMAL, `#PLAY_MODES=A01:` and 17
-digits (the shared mode, T1–T8, M1–M8; 0 NORMAL, 1 REVERSED, 2 PINGPONG, 3 RANDOM, 4 SHUFFLE, 5 PINGPONG 2), whenever the
+digits (the shared mode, T1–T8, M1–M8; 0 NORMAL, 1 REVERSED, 2 PINGPONG, 3 RANDOM, 4 SHUFFLE, 5 PINGPONG 2, 6 REPEAT; a build
+without REPEAT reads a 6 as NORMAL), whenever the
 Octatrack writes the project's settings: PROJECT > SAVE (which copies it to
 `project.strd`), SYNC TO CARD, and PROJECT > CHANGE. Loading or reloading a
 project sets them from those lines; a project without them (older, or saved
@@ -85,6 +114,9 @@ there).
   lets steps repeat and others drop out.
 - With PER TRACK scale mode and different lengths, a 5-step PINGPONG hat
   against a 16-step NORMAL kick drifts in and out of phase.
+- REPEAT on a drum or MIDI track: hold one step for a roll, or two or three
+  for a stutter, and let go to land back in time with the rest of the
+  pattern.
 
 PLAY and every pattern change start each track from its first step again
 (REVERSED from its last) and draw a new RANDOM / SHUFFLE order.
@@ -96,6 +128,11 @@ PLAY and every pattern change start each track from its first step again
    now sounds on the last step of every bar, and the trig LEDs walk 16 → 1.
 3. Hold [TRACK 1], press [DOWN] once more: `ALL PINGPONG`; hold it and press
    [UP] twice to return to `ALL NORMAL`.
+4. Hold [TRACK 1], press [DOWN] six times: `ALL REPEAT`. Press PLAY, then
+   hold [TRIG 5] and [TRIG 8]: every track loops steps 5 and 8. Let go: the
+   pattern goes on in time, from where it would have been.
+5. Hold [TRACK 1] and press [UP] until `ALL NORMAL` to give the trig keys
+   back to stock.
 
 ## PER TRACK scale mode and MASTER LENGTH
 
@@ -123,6 +160,19 @@ it its own CHAIN AFTER length). This is stock behaviour.
   handler at other sites; combinations are untested.
 - Swing follows the step that plays (stock reads the swing bit of the step
   it is given). Trig conditions keep counting stock passes.
+- REPEAT changes one stock flow, and only while the sequencer plays with
+  the current track in REPEAT: the trig keys in TRACKS trig mode belong to
+  the repeat, so keys 1–8 no longer trigger tracks (and 9–16 lose their
+  TRACKS-mode use) until the mode is set back. Why: a hold must not also
+  fire the tracks; an own trig mode or a new key combination would need
+  stock code nobody owns yet. Stopped, GRID REC (the keys edit trigs),
+  LIVE REC (they record) and the other trig modes are untouched, and a key
+  whose press stock saw is released to stock. Checked under the port with
+  GRID REC, LIVE REC, CHROMATIC and stopped; not yet on a unit.
+- REPEAT: on patterns longer than 16 steps the keys name the playhead's
+  page, not the page the trig LEDs show. MIDI note lengths over repeated
+  steps, micro-timing, conditions and slides on repeated steps are
+  untested.
 - Like every DRAM module, the test image gives up about 10 MB of sample
   memory to the platform reserve.
 
@@ -139,17 +189,19 @@ local original 1.40C extraction, `python3 generate.py`, then build
 permutation every pass, random's spread, look-ahead equals what then plays,
 what is prepared while stopped equals what PLAY plays, the popup text) and
 the firmware glue (scale mode, per-track lengths, MASTER LENGTH cut, PLAY
-and pattern-switch restarts, the project line and battery RAM) on the host. With `m68k-elf-gcc` on the PATH it
+and pattern-switch restarts, the project line and battery RAM, STEP REPEAT's
+held steps, release, look-ahead and key handling) on the host. With `m68k-elf-gcc` on the PATH it
 also compiles and assembles the ColdFire unit and refuses any call outside
-it. Hardware results: [TESTING.md](TESTING.md).
+it. Hardware results, and STEP REPEAT's run under the ColdFire port:
+[TESTING.md](TESTING.md).
 
 ## Files
 
 | file | what |
 |---|---|
 | `playmode.h`, `playmode.c` | the engine: pure, freestanding C |
-| `adapter.c` | firmware glue: sequencer bytes, restarts, lengths, popup text, per-pattern table, project lines, battery copy |
-| `hooks.s` | the detour stubs (14 + the pattern-copy memcpy), the register-saving entries, DRAM state |
+| `adapter.c` | firmware glue: sequencer bytes, restarts, lengths, popup text, per-pattern table, project lines, battery copy, STEP REPEAT's held keys |
+| `hooks.s` | the detour stubs (STEP REPEAT's trig-key stub among them, + the pattern-copy memcpy), the register-saving entries, DRAM state |
 | `generate.py` | compiles and assembles the three into the linked unit `playmodes.s` |
 | `verify.py`, `test_*.c` | host tests |
 | `manifest.py` | native declaration: the unit and its detours, each guarded by stock bytes |
@@ -162,6 +214,9 @@ Original code and illustration by devilfish707, MIT ([LICENSE](LICENSE)).
 Firmware addresses are cited from octabam (Sam Banks), SCALE QUANTIZER and
 DIRECT JUMP (Tim Hastie), the KYOTI firmware notes (Zac-Kyoti) and OctaKit
 (June Kiff), and read from the author's own 1.40C with `investigate.py`.
+STEP REPEAT (the REPEAT mode and its trig-key detour) contributed by
+pgstath, MIT; its trig-key, GRID REC, LIVE REC and trig-mode addresses
+were read from the contributor's own 1.40C (INVESTIGATION.md section 5).
 No Elektron code, tables or images are included.
 
 ## Screens and audio

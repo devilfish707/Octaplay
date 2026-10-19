@@ -251,6 +251,54 @@ pm_arrow_key:
         movea.l 8(%sp),%a0              | displaced
         jmp     0x400491a6
 
+| 0x40060cfc, the trig-key dispatcher 0x40060ce0's tail call into the trig
+| logic 0x400501d8(code, event). Both key maps (MKI 0x400bfd96.., MKII
+| 0x400c037a..) send every trig key's press, release and hold to
+| 0x40060ce0, which goes elsewhere while GRID REC (0x460d1736, toggled by
+| the REC handler 0x40048774) is on, so this site only sees keys GRID REC
+| does not edit. The keys are free for a repeat in TRACKS trig mode
+| (0x460d16f0 == 0: 0x400501d8's switch) with LIVE REC off (0x460d172a: set
+| by PLAY with REC held, 0x40061804). pm_trig_key decides; a key it takes
+| never reaches stock, and when the held steps changed stock prepares its
+| steps again (REBUILD, as pm_key_entry). Displaced: jmp 0x400501d8 (6).
+| handler(code, event): 4(sp) code 0..15, 8(sp) event (1 press, 0 release,
+| 2 hold); d0/d1 are the args stock reloads from the stack.
+        .global pm_trig_stub
+        .equ    TRIG_MODE, 0x460d16f0   | 0 TRACKS, 1 CHROMATIC, 2..5 the others
+        .equ    LIVE_REC, 0x460d172a
+        .equ    CUR_TRACK, 0x100b14cc   | the active track 0..7 (MIDI mode: M1..M8)
+        .equ    TRIG_LOGIC, 0x400501d8
+pm_trig_stub:
+        moveq   #0,%d0                  | free?
+        tst.l   TRIG_MODE
+        bne.s   .Ltrig_busy
+        tst.l   LIVE_REC
+        bne.s   .Ltrig_busy
+        moveq   #1,%d0
+.Ltrig_busy:
+        move.l  %d0,-(%sp)              | free
+        move.l  12(%sp),-(%sp)          | event (shifted by one push)
+        move.l  12(%sp),-(%sp)          | code (shifted by two)
+        mvz.b   CUR_TRACK,%d0
+        tst.l   MIDI_MODE
+        beq.s   .Ltrig_audio
+        addq.l  #8,%d0                  | the engine's MIDI tracks are 8..15
+.Ltrig_audio:
+        move.l  %d0,-(%sp)              | track
+        jsr     pm_trig_key
+        lea     16(%sp),%sp
+        tst.l   %d0
+        beq.s   .Ltrig_stock
+        subq.l  #2,%d0
+        bne.s   .Ltrig_taken            | 1: taken, nothing changed
+        pea     0xffffffff              | 2: the held steps changed: stock
+        jsr     REBUILD                 | prepares every track's step again
+        addq.l  #4,%sp
+.Ltrig_taken:
+        rts                             | consumed: back to the key dispatcher
+.Ltrig_stock:
+        jmp     TRIG_LOGIC              | displaced
+
 | ---- the project file ------------------------------------------------------
 | The loader 0x400866c4(file, storing) reads project.work line by line and
 | skips any line that starts with '#' (stock too); the writer 0x400882a2
@@ -358,6 +406,7 @@ pm_clear_pattern:
         .global pm_state, pm_ready, pm_last_transport, pm_last_bank
         .global pm_last_pattern, pm_toast, pm_held_track, pm_restart, pm_line
         .global pm_table, pm_cur, pm_clip, pm_undo, pm_comp
+        .global pm_held, pm_rep_last, pm_rep_page
 pm_state:
         .zero   224
 pm_ready:
@@ -390,3 +439,10 @@ pm_comp:
         .zero   16                      | per track: the computed length last seen
 pm_hist:
         .zero   64                      | per track: the last two steps played, for the LEDs
+        .balign 4
+pm_held:
+        .long   0                       | STEP REPEAT: bit k = trig key k + 1 held for a repeat
+pm_rep_last:
+        .zero   16                      | per track: the last repeated step + 1, 0 = none
+pm_rep_page:
+        .zero   16                      | per track: the page the keys name (its first step) + 1

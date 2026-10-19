@@ -174,9 +174,11 @@ static void test_ui(void) {
     CHECK(strcmp(pm_ui_label(&s, 5, 0, label), "ALL PINGPONG 2") == 0, "label %s", label);
     CHECK(pm_ui_step(&s, 0, +1, 0) == PM_RANDOM, "then RANDOM");
     CHECK(pm_ui_step(&s, 0, +1, 0) == PM_SHUFFLE, "then SHUFFLE");
-    CHECK(pm_ui_step(&s, 0, +1, 0) == PM_SHUFFLE, "clamps at SHUFFLE");
-    CHECK(pm_ui_step(&s, 0, -1, 0) == PM_RANDOM && pm_ui_step(&s, 0, -1, 0) == PM_PINGPONG2,
-          "UP walks back through PINGPONG 2");
+    CHECK(pm_ui_step(&s, 0, +1, 0) == PM_REPEAT, "then REPEAT");
+    CHECK(strcmp(pm_ui_label(&s, 5, 0, label), "ALL REPEAT") == 0, "label %s", label);
+    CHECK(pm_ui_step(&s, 0, +1, 0) == PM_REPEAT, "clamps at REPEAT");
+    CHECK(pm_ui_step(&s, 0, -1, 0) == PM_SHUFFLE && pm_ui_step(&s, 0, -1, 0) == PM_RANDOM
+          && pm_ui_step(&s, 0, -1, 0) == PM_PINGPONG2, "UP walks back through PINGPONG 2");
     for (int i = 0; i < 9; ++i) pm_ui_step(&s, 0, -1, 0);
     CHECK(s.settings.global == PM_NORMAL, "clamps at NORMAL");
     /* PER TRACK: each track its own, and the shared one is kept. */
@@ -249,7 +251,55 @@ static void test_next_run(void) {
         }
 }
 
+/* STEP REPEAT: `n` steps of a repeat from its first, the keys unchanged. */
+static void repeat_run(uint16_t held, unsigned base, unsigned len, unsigned n, unsigned *out) {
+    unsigned last = PM_NO_STEP;
+    for (unsigned i = 0; i < n; ++i) last = out[i] = pm_repeat_next(held, base, len, last);
+}
+
+/* The held steps in step order, round and round; steps past the track's
+ * end left out. Keys are bits (bit k = trig key k + 1); steps count from 0. */
+static void test_repeat(void) {
+    unsigned out[8];
+    static const unsigned want5_8[] = {4, 7, 4, 7, 4, 7};
+    repeat_run(1u << 4 | 1u << 7, 0, 16, 6, out);
+    CHECK(memcmp(out, want5_8, sizeof want5_8) == 0, "5 and 8: 5 8 5 8 5 8");
+    repeat_run(1u << 2, 0, 16, 5, out);
+    for (unsigned i = 0; i < 5; ++i) CHECK(out[i] == 2, "one key: that step every step");
+    const uint16_t k1_9_16 = 1u << 0 | 1u << 8 | 1u << 15;
+    static const unsigned want3[] = {0, 8, 15, 0, 8, 15};
+    repeat_run(k1_9_16, 0, 16, 6, out);
+    CHECK(memcmp(out, want3, sizeof want3) == 0, "1, 9, 16 in step order");
+    /* An 8-step track: keys 9 and 16 lie past its end. */
+    repeat_run(k1_9_16, 0, 8, 4, out);
+    for (unsigned i = 0; i < 4; ++i) CHECK(out[i] == 0, "len 8: step 1 repeats");
+    CHECK(pm_repeat_next(1u << 12, 0, 8, PM_NO_STEP) == PM_NO_STEP, "no held step inside the track");
+    CHECK(pm_repeat_next(0, 0, 16, 3) == PM_NO_STEP, "nothing held");
+    CHECK(pm_repeat_next(1u << 3, 0, 0, PM_NO_STEP) == PM_NO_STEP, "length 0");
+    /* Keys pressed or let go mid-loop join or leave in their place: 1 3 6,
+     * let go of 3 after it played: 6 comes next, not 1. */
+    const uint16_t k1_3_6 = 1u << 0 | 1u << 2 | 1u << 5;
+    CHECK(pm_repeat_next(k1_3_6, 0, 16, PM_NO_STEP) == 0 && pm_repeat_next(k1_3_6, 0, 16, 0) == 2,
+          "1 then 3");
+    CHECK(pm_repeat_next(1u << 0 | 1u << 5, 0, 16, 2) == 5, "3 let go after it played: 6 next");
+    CHECK(pm_repeat_next(k1_3_6 | 1u << 3, 0, 16, 2) == 3, "4 pressed after 3 played: 4 next");
+    CHECK(pm_repeat_next(1u << 9, 0, 16, 2) == 9, "only 10 left: 10");
+    CHECK(pm_repeat_next(1u << 1, 0, 16, 9) == 1, "past the highest held step: round to the lowest");
+    /* The second page: keys name steps 17..32; a 20-step track has 17..20. */
+    CHECK(pm_repeat_next(1u << 0 | 1u << 3, 16, 32, 16) == 19, "page 2: key 4 is step 20");
+    static const unsigned page2[] = {16, 17, 18, 19, 16, 17};
+    repeat_run(0xffffu, 16, 20, 6, out);
+    CHECK(memcmp(out, page2, sizeof page2) == 0, "page 2 of 20 steps: 17..20 only");
+    /* Long patterns cap at 64 steps, as pm_map does. */
+    CHECK(pm_repeat_next(0xffffu, 48, 200, 62) == 63 && pm_repeat_next(0xffffu, 48, 200, 63) == 48,
+          "page 4 of a capped length");
+    /* With no key held REPEAT plays what NORMAL plays. */
+    for (unsigned raw = 0; raw < 20; ++raw)
+        CHECK(pm_map(PM_REPEAT, 16, raw / 16, raw, 0) == raw % 16, "REPEAT idle is NORMAL");
+}
+
 int main(void) {
+    test_repeat();
     test_normal_reverse();
     test_pingpong();
     test_shuffle();

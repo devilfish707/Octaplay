@@ -1,7 +1,8 @@
 # Octaplay
 
 Playhead modes for the Elektron Octatrack: run the sequencer **normal,
-reversed, pingpong (two kinds), random or shuffle**, shared by every track or set per
+reversed, pingpong (two kinds), random or shuffle**, or **repeat** the steps
+whose trig keys you hold, shared by every track or set per
 track (audio T1–T8 and MIDI M1–M8). A firmware module for original OS
 1.40C, built with the [octabam](https://github.com/sambanks/octabam) /
 octamod remixer.
@@ -22,9 +23,15 @@ Flashing modified firmware is at your own risk.
 | PINGPONG 2 | 1 … 16 16 … 1, 1 … 16 …: the end steps play twice |
 | RANDOM | any step each time; a step can repeat |
 | SHUFFLE | every step once per pass, in a new order every pass |
+| REPEAT | stock until trig keys are held while playing, then only the held steps (hold 5 and 8: 5 8 5 8 …) |
 
 - **Hold [TRACK] + [UP]/[DOWN]** to change the mode; a popup shows it
   (`ALL PINGPONG`, `T3 REVERSED`, `M2 SHUFFLE`).
+- **REPEAT:** hold trig keys while playing and the track loops those steps;
+  the stock playhead keeps counting, so letting go lands the track where it
+  would have been. While it is on and playing, the trig keys no longer
+  trigger tracks in TRACKS trig mode. Host-tested and run under the
+  ColdFire port; not yet played on a unit.
 - **SCALE MODE NORMAL:** one mode for all tracks, moving together.
   **PER TRACK:** each track its own mode, length and scale.
 - Each step's trig, trig condition, micro-timing, swing bit and p-locks move

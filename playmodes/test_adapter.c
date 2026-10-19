@@ -18,6 +18,8 @@ uint16_t pm_cur;
 uint8_t pm_clip[17], pm_undo[17];
 uint8_t pm_comp[16];
 uint8_t pm_hist[16][4];
+uint32_t pm_held;
+uint8_t pm_rep_last[16], pm_rep_page[16];
 
 unsigned pm_seq_step(unsigned track, unsigned raw);
 unsigned pm_seq_peek(unsigned track, unsigned raw);
@@ -30,6 +32,7 @@ void pm_project_begin(unsigned storing);
 unsigned pm_project_line(const char *line, unsigned parse_only);
 void pm_pattern_copy(uint32_t dst, uint32_t src, uint32_t n);
 void pm_pattern_clear(uint32_t address);
+unsigned pm_trig_key(unsigned track, unsigned key, unsigned event, unsigned free);
 
 /* Three regions: the bank blobs, the sequencer globals, the frame clock. */
 static uint8_t blob[2 * 0x9b340];
@@ -390,6 +393,118 @@ int main(void) {
         memset(pm_table, 0, sizeof pm_table); pm_ready = 0; pm_cur = 0;
         pm_seq_step(0, 0);
         CHECK(pm_table[1][0] == 0 && pm_table[0][0] == PM_REVERSE, "the clear reaches battery RAM");
+        set_playing(0, 0);
+        pm_project_begin(1);
+    }
+
+    /* STEP REPEAT: trig keys held while playing loop the held steps; the
+     * stock playhead keeps counting, and the track goes on from where it
+     * is when the keys are let go. pm_trig_key(track, key, event, free):
+     * event 1 press, 0 release, 2 a hold; keys and steps count from 0. */
+    {
+        set_transport(1);
+        set_playing(0, 0);                 /* A01: NORMAL scale, length 8 */
+        pm_project_begin(1);
+        pm_restart = 1;
+        CHECK(pm_trig_key(0, 4, 1, 1) == 0 && pm_trig_key(0, 4, 0, 1) == 0,
+              "NORMAL: the trig key and its release are stock's");
+        for (int i = 0; i < 6; ++i) key(0, +1);
+        CHECK(strcmp(pm_toast, "ALL REPEAT") == 0, "toast %s", pm_toast);
+        for (unsigned r = 0; r < 3; ++r)
+            CHECK(pm_seq_step(0, r) == r, "REPEAT with nothing held plays NORMAL: %u", r);
+
+        /* Hold trigs 5 and 8 during step 3. */
+        CHECK(pm_trig_key(0, 4, 1, 1) == 2, "a press while playing in REPEAT is taken");
+        CHECK(pm_trig_key(0, 7, 1, 1) == 2, "a second key adds its step");
+        CHECK(pm_trig_key(0, 7, 2, 1) == 1, "a hold event of a held key: taken, no change");
+        CHECK(pm_seq_peek(0, 3) == 4, "the look-ahead names step 5 (%u)", pm_seq_peek(0, 3));
+        static const unsigned loop[] = {4, 7, 4, 7, 4, 7, 4, 7};
+        for (unsigned i = 0; i < 8; ++i) {
+            unsigned raw = (3 + i) % 8;    /* the stock playhead goes on: 3..7, 0..2 */
+            unsigned played = pm_seq_step(0, raw);
+            CHECK(played == loop[i], "repeat step %u (stock %u): %u", i, raw, played);
+            CHECK(pm_show(0, raw) == played, "the LEDs show the repeated step (%u)", pm_show(0, raw));
+            CHECK(pm_seq_peek(0, (raw + 1) % 8) == loop[(i + 1) % 8], "look-ahead after step %u", i);
+        }
+        CHECK(pm_seq_step(3, 3) == 4 && pm_seq_step(10, 3) == 4,
+              "NORMAL scale: every track, audio and MIDI, repeats from the lowest held step");
+
+        /* Let go: stock's playhead is on step 3 (it played 2 last), and the
+         * track goes on from there. */
+        CHECK(pm_trig_key(0, 4, 0, 1) == 2 && pm_trig_key(0, 7, 0, 1) == 2, "the releases are taken");
+        CHECK(pm_held == 0, "nothing held");
+        CHECK(pm_seq_peek(0, 3) == 3, "the look-ahead is stock's again");
+        for (unsigned r = 3; r < 8; ++r)
+            CHECK(pm_seq_step(0, r) == r, "after the release, the step stock reached: %u", r);
+
+        /* Keys pressed or let go mid-loop join or leave in their place. */
+        pm_trig_key(0, 0, 1, 1); pm_trig_key(0, 2, 1, 1); pm_trig_key(0, 5, 1, 1);  /* 1 3 6 */
+        CHECK(pm_seq_step(0, 0) == 0 && pm_seq_step(0, 1) == 2, "1 3 6: 1, 3");
+        CHECK(pm_trig_key(0, 2, 0, 1) == 2, "let go of 3");
+        CHECK(pm_seq_step(0, 2) == 5 && pm_seq_step(0, 3) == 0, "then 6, 1");
+        pm_trig_key(0, 3, 1, 1);                                                  /* 4 */
+        CHECK(pm_seq_step(0, 4) == 3 && pm_seq_step(0, 5) == 5, "4 joins: 4, 6");
+        pm_trig_key(0, 0, 0, 1); pm_trig_key(0, 3, 0, 1); pm_trig_key(0, 5, 0, 1);
+        CHECK(pm_seq_step(0, 6) == 6, "all let go: stock's step 7");
+
+        /* Stopped, or keys busy (GRID REC and the like): stock's key. */
+        set_transport(0);
+        CHECK(pm_trig_key(0, 1, 1, 1) == 0, "stopped: a press is stock's");
+        set_transport(1);
+        CHECK(pm_trig_key(0, 1, 0, 1) == 0, "and so is its release, now playing");
+        CHECK(pm_trig_key(0, 1, 1, 0) == 0, "keys not free: stock's");
+        CHECK(pm_trig_key(0, 16, 1, 1) == 0 && pm_trig_key(20, 1, 1, 1) == 0, "out of range");
+        /* STOP while holding: nothing repeats while stopped; the release is
+         * still the repeat's (it took the press). */
+        CHECK(pm_trig_key(0, 2, 1, 1) == 2, "held while playing");
+        set_transport(0);
+        CHECK(pm_seq_peek(0, 0) == 0, "stopped: stock prepares step 1, not the held step");
+        CHECK(pm_trig_key(0, 2, 0, 1) == 2 && pm_held == 0, "the release, while stopped");
+        set_transport(1);
+
+        /* A 32-step pattern on its second page: key 1 names step 17. */
+        uint8_t *p = pattern(0, 0);
+        p[0x8e53] = 32;
+        pm_restart = 1;
+        for (unsigned r = 0; r < 18; ++r) pm_seq_step(0, r);
+        pm_trig_key(0, 0, 1, 1);
+        for (unsigned r = 18; r < 32; ++r)
+            CHECK(pm_seq_step(0, r) == 16, "page 2: step 17 repeats (stock %u)", r);
+        CHECK(pm_seq_step(0, 0) == 16, "the page stays latched across the pattern end");
+        pm_trig_key(0, 0, 0, 1);
+        CHECK(pm_seq_step(0, 1) == 1, "let go: stock's step 2");
+        p[0x8e53] = 8;
+
+        /* PER TRACK: only tracks in REPEAT repeat, and a press is taken only
+         * when the current track is in REPEAT. Held steps past a track's
+         * length are left out. */
+        uint8_t *b = pattern(1, 3);
+        b[0x8e55] = 1; b[0x8e50] = 0xff; b[0x8e51] = 0xff;
+        b[0 * 0x91a + 0x50] = 16; b[0 * 0x91a + 0x51] = 2;   /* T1: 16 steps */
+        b[2 * 0x91a + 0x50] = 5;  b[2 * 0x91a + 0x51] = 2;   /* T3: 5 steps */
+        set_playing(1, 3);
+        pm_restart = 1;
+        pm_seq_step(0, 0);
+        for (int i = 0; i < 6; ++i) { key(2, +1); key(9, +1); }
+        CHECK(strcmp(key(9, 0), "M2 REPEAT") == 0 && strcmp(key(2, 0), "T3 REPEAT") == 0,
+              "toast %s", pm_toast);
+        CHECK(pm_trig_key(0, 1, 1, 1) == 0, "current track T1 is NORMAL: stock's key");
+        CHECK(pm_trig_key(2, 1, 1, 1) == 2 && pm_trig_key(2, 8, 1, 1) == 2, "T3 current: taken");
+        for (unsigned r = 1; r < 5; ++r) {
+            CHECK(pm_seq_step(2, r) == 1, "T3 (5 steps): only step 2 repeats (stock %u)", r);
+            CHECK(pm_seq_step(9, r) == 1, "M2 (7 steps): only step 2 repeats (stock %u)", r);
+            CHECK(pm_seq_step(0, r) == r, "T1 in NORMAL plays stock's %u", r);
+        }
+        pm_trig_key(2, 1, 0, 1); pm_trig_key(2, 8, 0, 1);
+        CHECK(pm_seq_step(2, 0) == 0 && pm_seq_step(9, 5) == 5, "let go: stock's steps");
+
+        /* The REPEAT digit goes to the project line and battery RAM. */
+        char line[40];
+        CHECK(pm_project_format(line, 19) && strcmp(line, "#PLAY_MODES=B04:00060000006000000\r\n") == 0,
+              "B04 %s", line);
+        memset(pm_table, 0, sizeof pm_table); pm_ready = 0; pm_cur = 0;
+        pm_seq_step(0, 0);
+        CHECK(pm_table[19][3] == PM_REPEAT && pm_table[19][10] == PM_REPEAT, "REPEAT after a power cycle");
         set_playing(0, 0);
         pm_project_begin(1);
     }

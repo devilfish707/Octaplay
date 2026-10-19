@@ -28,11 +28,16 @@ enum {
     PM_PINGPONG2,    /* 1 .. 16 16 .. 1 | 1 .. : the end steps play twice.
                         Numbered last so saved projects keep their digits;
                         the list the keys walk puts it after PINGPONG      */
+    PM_REPEAT,       /* STEP REPEAT: NORMAL until trig keys are held while
+                        playing, then the held steps, round and round (see
+                        pm_repeat_next). After PINGPONG 2 for the same
+                        reason; a build without it reads its digit as NORMAL */
     PM_MODES
 };
 
 #define PM_TRACKS 16      /* 0..7 audio T1..T8, 8..15 MIDI M1..M8 */
 #define PM_MAX_LEN 64
+#define PM_NO_STEP 0xffu  /* pm_repeat_next: none (no step yet, or none held) */
 
 /* What the user chose. `global` is used for every track while the pattern's
  * scale mode is NORMAL; `track[t]` while it is PER TRACK. Switching the
@@ -91,8 +96,18 @@ unsigned pm_lookup(const PmState *s, unsigned track, unsigned raw,
 unsigned pm_map(unsigned mode, unsigned len, uint32_t cycle, unsigned raw,
                 uint32_t seed);
 
+/* STEP REPEAT: the held step a repeat plays after `last` (the step it
+ * played last, or PM_NO_STEP before its first): the next held step in step
+ * order, after the highest the lowest again, so the held steps go round
+ * and round and a key pressed or let go mid-loop joins or leaves in its
+ * place. `held` has bit k set while trig key k + 1 is held, and key k
+ * names step `base + k` (base: the first step of the 16-step page the keys
+ * name). Held steps at or past `len` are left out; PM_NO_STEP when none is
+ * left. A pure function. */
+unsigned pm_repeat_next(uint16_t held, unsigned base, unsigned len, unsigned last);
+
 /* UP / DOWN in the play-mode popup while a TRACK key is held. delta is -1
- * (UP: towards NORMAL) or +1 (DOWN: towards SHUFFLE); the list does not
+ * (UP: towards NORMAL) or +1 (DOWN: towards REPEAT); the list does not
  * wrap. Writes the changed mode (the shared one under NORMAL scale mode,
  * the track's own under PER TRACK) and returns it. */
 unsigned pm_ui_step(PmState *s, unsigned track, int delta, unsigned per_track);

@@ -238,6 +238,8 @@ static void pm_hist_clear(void) {
         for (unsigned k = 0; k < 4; ++k) pm_hist[t][k] = 0;
 }
 
+static void pm_repeat_clear(void);       /* STEP REPEAT, below */
+
 static void pm_sync(void) {
     pm_ensure();
     unsigned transport = U32(SEQ_TRANSPORT) == 1;
@@ -247,6 +249,7 @@ static void pm_sync(void) {
         pm_restart = 0;
         pm_reset_all(&pm_state);
         pm_hist_clear();
+        pm_repeat_clear();
     }
     pm_last_transport = (uint8_t)transport;
     pm_last_bank = (uint8_t)bank;
@@ -307,6 +310,100 @@ static unsigned pm_is_normal(unsigned track) {
     return pm_mode(&pm_state, track, pm_per_track()) == PM_NORMAL;
 }
 
+static unsigned pm_playing(void) { return U32(SEQ_TRANSPORT) == 1; }
+
+/* --- STEP REPEAT -------------------------------------------------------------
+ * A track whose mode is REPEAT plays NORMAL until trig keys are held while
+ * the sequencer runs; then it plays the held steps, in step order, one per
+ * track step, round and round. The stock playhead keeps counting under it,
+ * so when the keys are let go the track goes on from the step it would
+ * have reached. The trig-key detour (hooks.s) asks pm_trig_key whether a
+ * key is the repeat's; the held keys live in pm_held. Each track keeps the
+ * last held step it played and the page the keys name, latched at its
+ * first repeated step (+ 1 both, 0 = none, as the DRAM boots zeroed). */
+extern uint32_t pm_held;                /* bit k: trig key k + 1 held for a repeat */
+extern uint8_t pm_rep_last[PM_TRACKS];  /* the last repeated step + 1              */
+extern uint8_t pm_rep_page[PM_TRACKS];  /* the page's first step + 1               */
+
+static void pm_repeat_off(unsigned track) {
+    pm_rep_last[track] = 0;
+    pm_rep_page[track] = 0;
+}
+
+static void pm_repeat_clear(void) {
+    for (unsigned t = 0; t < PM_TRACKS; ++t) pm_repeat_off(t);
+}
+
+/* The keys name the steps of the page the track's playhead is on.
+ * (The page the trig LEDs show while editing is not known yet:
+ * INVESTIGATION section 5.) */
+static unsigned pm_repeat_page(unsigned track, unsigned raw, unsigned len) {
+    if (pm_rep_page[track]) return pm_rep_page[track] - 1u;
+    if (len) raw %= len;
+    return raw - raw % 16;
+}
+
+static unsigned pm_repeat_on(unsigned track) {
+    return pm_held && track < PM_TRACKS && pm_playing()
+        && pm_mode(&pm_state, track, pm_per_track()) == PM_REPEAT;
+}
+
+/* One stock step: the held step `track` repeats now, or `step` (what its
+ * mode plays) when it is not repeating or no held step lies inside it. */
+static unsigned pm_repeat_step(unsigned track, unsigned raw, unsigned len, unsigned step) {
+    if (!pm_repeat_on(track)) {
+        if (track < PM_TRACKS) pm_repeat_off(track);
+        return step;
+    }
+    unsigned base = pm_repeat_page(track, raw, len);
+    pm_rep_page[track] = (uint8_t)(base + 1);
+    unsigned last = pm_rep_last[track] ? pm_rep_last[track] - 1u : PM_NO_STEP;
+    unsigned next = pm_repeat_next((uint16_t)pm_held, base, len, last);
+    if (next == PM_NO_STEP) return step;
+    pm_rep_last[track] = (uint8_t)(next + 1);
+    return next;
+}
+
+/* The look-ahead form: the step pm_repeat_step will play next. Changes
+ * nothing. */
+static unsigned pm_repeat_peek(unsigned track, unsigned raw, unsigned len, unsigned step) {
+    if (!pm_repeat_on(track)) return step;
+    unsigned last = pm_rep_last[track] ? pm_rep_last[track] - 1u : PM_NO_STEP;
+    unsigned next = pm_repeat_next((uint16_t)pm_held, pm_repeat_page(track, raw, len), len, last);
+    return next == PM_NO_STEP ? step : next;
+}
+
+/* A trig key, from the trig-key detour: `key` 0..15, `event` 1 press, 0
+ * release, anything else the key still held. `track` is the current track
+ * (MIDI tracks 8..15); `free` is nonzero when the trig keys are not
+ * editing or playing anything a repeat must not take (the detour reads
+ * that: INVESTIGATION section 5). A press is the repeat's only while the
+ * sequencer plays and the track is in REPEAT; a release (or hold) is the
+ * repeat's only when its press was. Returns 0 to let stock have the key,
+ * 1 when the repeat takes it, 2 when it takes it and the held steps
+ * changed: hooks.s then has stock prepare its steps again (0x4009da20(-1),
+ * as pm_key_entry does), so a step prepared before the change does not
+ * fire. Key-handler context. */
+unsigned pm_trig_key(unsigned track, unsigned key, unsigned event, unsigned free) {
+    if (key > 15) return 0;
+    uint32_t bit = 1u << key;
+    if (event == 1) {
+        if (pm_held & bit) return 1;
+        pm_ensure();
+        if (!free || !pm_playing() || track >= PM_TRACKS
+            || pm_mode(&pm_state, track, pm_per_track()) != PM_REPEAT)
+            return 0;
+        if (!pm_held) pm_repeat_clear();    /* a new hold starts on its first step */
+        pm_held |= bit;
+        return 2;
+    }
+    if (!(pm_held & bit)) return 0;          /* stock saw the press: its release */
+    if (event) return 1;
+    pm_held &= ~bit;
+    if (!pm_held) pm_repeat_clear();
+    return 2;
+}
+
 /* The sequencer detour calls this once per track per step, with the step
  * the stock playhead has just reached, and plays the step it returns: its
  * trig bits, its locks (0x4009d1e8's `step` argument), its conditions. */
@@ -334,13 +431,12 @@ unsigned pm_seq_step(unsigned track, unsigned raw) {
     if (track >= PM_TRACKS) return raw;
     unsigned step = pm_is_normal(track) ? raw
                   : pm_lookup(&pm_state, track, raw, len, pm_per_track());
+    step = pm_repeat_step(track, raw, len, step);
     uint8_t *h = pm_hist[track];
     h[2] = h[0]; h[3] = h[1];
     h[0] = (uint8_t)(raw + 1); h[1] = (uint8_t)step;
     return step;
 }
-
-static unsigned pm_playing(void) { return U32(SEQ_TRANSPORT) == 1; }
 
 /* Look-ahead readers and the rebuild 0x4009da20 ask about a step that has
  * not been reached; `raw` may equal the length (the next pass). Changes
@@ -355,7 +451,7 @@ unsigned pm_seq_peek(unsigned track, unsigned raw) {
     if (track < PM_TRACKS && pm_is_normal(track)) return raw;
     if (!pm_playing())
         return pm_lookup_next_run(&pm_state, track, raw, len, pm_per_track());
-    return pm_lookup(&pm_state, track, raw, len, pm_per_track());
+    return pm_repeat_peek(track, raw, len, pm_lookup(&pm_state, track, raw, len, pm_per_track()));
 }
 
 #define PM_MASTER 0xffffffffu

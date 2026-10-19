@@ -261,3 +261,40 @@ refreshes (`jmp 0x4009da20`). Detour `pm_clear_pattern` there (6: `jsr
   with its own input layer may take the arrows first).
 - PROJECT > NEW: whether it passes through the loader. If not, a new
   project keeps the previous modes until it is saved and reloaded.
+
+## 5. STEP REPEAT: what has to be found (branch `step-repeat`)
+
+REPEAT is a seventh mode: NORMAL until trig keys are held while playing,
+then the held steps in step order, one per track step; the stock counter
+keeps running, so letting go resumes where it is. The engine
+(`pm_repeat_next`) and the glue (`pm_repeat_step` / `pm_repeat_peek` in
+the two step paths, `pm_trig_key` for the keys) are host-tested; the
+trig-key detour `pm_trig_stub` is written from the reads below (19 Oct
+2026, the contributor's original 1.40C, MAIN OS SHA-256 as above) and is
+not yet run under the port or on a unit.
+
+| what | where | |
+|---|---|---|
+| both key maps send every trig key's press, release and hold to one handler | MKI `0x400bfd96..0x400bff1c`, MKII `0x400c037a..0x400c0500`, codes `0x00..0x0f`: `0x40060ce0` in all three slots (round 2) | 📖 |
+| `0x40060ce0(code, event)` is a dispatcher: GRID REC on goes to `0x40060b58`, otherwise a tail call `jmp 0x400501d8` at `0x40060cfc` with the arguments back on the stack | the detour site: 6 bytes, one whole `jmp` | 📖 |
+| GRID REC | `0x460d1736` (long): the REC handler `0x40048774` toggles it on each press; PLAY with REC held clears it (`0x4006180a`) | 📖 |
+| LIVE REC | `0x460d172a` (long): PLAY with REC held (`0x460d1726`, set by REC's press, cleared by its release) sets it at `0x40061804`; PLAY or REC clears it | 📖 |
+| the trig mode | `0x460d16f0` (long, 0..5): `0x400501d8` returns on hold events (`event > 1`) and switches on it; 0 calls `0x40044584(code, event)` (TRACKS), 1 the CHROMATIC handlers (octave × 12, MIDI branch on `0x80000012`), 2 and 3 page ×16 (SLOTS, SLICES), 4 and 5 `(code, event)` only | 📖 (names of 2..5 ❓) |
+| TRACKS mode | `0x40044584`: keys 1..8 trigger audio tracks 1..8 (`0x4009b5c8` / `0x4009f3a4`, per the track's trig setting); keys 9..16 take a second path that branches on MIDI mode | 📖 (key 9..16 meaning ❓) |
+| the current track | `0x100b14cc` (byte), which the CHROMATIC branch passes as the track in both audio and MIDI mode; MIDI mode `0x80000012` | 📖 |
+| the page the trig LEDs show | not located; the playhead's page is used | ❓ |
+
+`pm_trig_stub` (hooks.s): free = TRACKS mode and LIVE REC off (GRID REC
+never reaches the site); track = `0x100b14cc` + 8 in MIDI mode; then
+`pm_trig_key`: 0 runs the displaced `jmp 0x400501d8`, 1 returns (`rts`,
+consumed), 2 also has stock prepare its steps again (`0x4009da20(-1)`,
+as `pm_key_entry` does). A key is taken only while playing, on a current
+track in REPEAT, with the keys free; a release only when its press was
+taken, so stock never sees half a key. While taken, keys 1..8 no longer
+trigger tracks in TRACKS mode: the stock flow REPEAT changes.
+
+Port checks before a flash: TRACKS mode, REPEAT on T1, hold trigs 5 + 8
+while playing: `0x4009d1e8`'s `step` runs 4, 7, 4, 7 while
+`0x800064d0[0]` keeps counting; let go: `step` equals the counter again.
+The same on a MIDI track (`0x4009cf4c`), with GRID REC on (nothing taken),
+in CHROMATIC (nothing taken) and stopped (nothing taken).

@@ -6,12 +6,12 @@ _Static_assert(sizeof(PmTrack) == 12, "track layout");
 _Static_assert(sizeof(PmState) == 20 + 12 * PM_TRACKS + 8, "state layout");
 
 static const char *const NAMES[PM_MODES] = {
-    "NORMAL", "REVERSED", "PINGPONG", "RANDOM", "SHUFFLE", "PINGPONG 2",
+    "NORMAL", "REVERSED", "PINGPONG", "RANDOM", "SHUFFLE", "PINGPONG 2", "REPEAT",
 };
 
 /* The order TRACK + UP / DOWN walks (stored numbers in list order). */
 static const uint8_t ORDER[PM_MODES] = {
-    PM_NORMAL, PM_REVERSE, PM_PINGPONG, PM_PINGPONG2, PM_RANDOM, PM_SHUFFLE,
+    PM_NORMAL, PM_REVERSE, PM_PINGPONG, PM_PINGPONG2, PM_RANDOM, PM_SHUFFLE, PM_REPEAT,
 };
 
 /* A 32-bit integer mix (the lowbias32 constants). Multiplies and shifts
@@ -87,9 +87,21 @@ unsigned pm_map(unsigned mode, unsigned len, uint32_t cycle, unsigned raw,
     }
     case PM_SHUFFLE:
         return shuffle_at(raw, len, mix(seed ^ (cycle * 0x27d4eb2fu)));
-    default:
+    default:                     /* NORMAL, and REPEAT with no key held */
         return raw;
     }
+}
+
+unsigned pm_repeat_next(uint16_t held, unsigned base, unsigned len, unsigned last) {
+    if (len > PM_MAX_LEN) len = PM_MAX_LEN;
+    unsigned first = PM_NO_STEP;
+    for (unsigned k = 0; k < 16; ++k) {
+        unsigned step = base + k;
+        if (!(held >> k & 1u) || step >= len) continue;
+        if (last == PM_NO_STEP || step > last) return step;
+        if (first == PM_NO_STEP) first = step;
+    }
+    return first;                          /* past the highest: round again */
 }
 
 void pm_init(PmState *s, uint32_t entropy) {

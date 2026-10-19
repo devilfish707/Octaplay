@@ -80,6 +80,51 @@ Earlier plan (18): per-pattern modes, their project lines, the whole table
 in battery RAM, pattern copy / paste / undo, clear pattern, PINGPONG 2; the
 MASTER LENGTH cut.
 
+## STEP REPEAT (branch `step-repeat`, 19 Oct 2026)
+
+Host gate: `python3 verify.py` passes (engine, glue and the ColdFire unit,
+Homebrew python 3.12, m68k-elf-gcc 16.2.0 bottled). New cases: the held
+steps in step order, round and round; steps past a track's length left
+out; keys pressed or let go mid-loop join or leave in their place; the
+second page; the look-ahead and the LEDs naming the repeated step; let go
+→ the stock step; stopped, keys busy, a release of a key stock pressed:
+stock's; PER TRACK only tracks in REPEAT; MIDI tracks; the REPEAT digit in
+the project line and battery RAM. Planted defects fail them: a wrong
+comparison in `pm_repeat_next` (7 engine, 11 adapter failures), the
+repeat call removed from `pm_seq_step` (37 adapter failures). `playmodes.s` regenerated from unchanged
+`main` is byte-identical, so the compiler matches.
+
+Emulator (the ColdFire port `ot_emu`, Modwerk's `sdk/octabam` at
+`c0f513b9`, remix `playmodes-test` = this module + the 14 stock effects,
+the contributor's own project on a staged card, clock and transport
+receive off in the staged copy, NORMAL scale mode, 16 steps, 1X, about
+152 BPM; `--live-script` key events, `--watch-mem` on the step record
+`pm_hist`, the held keys and the stock flags). Port evidence only: no
+audio, no hardware, no MKI.
+
+| case | result |
+|---|---|
+| the image boots, the loader runs once, no fatal hang | `verify_dram_boot` PASS; its runtime-bytes line FAILs on 87 bytes of `pm_state` the runtime initialises itself, the same on unchanged Play Modes (the gate knows only MIDI Scenes' words) |
+| TRACK 1 + DOWN × 6 | REVERSED, PINGPONG, PINGPONG 2, RANDOM, SHUFFLE, REPEAT (stored 6) |
+| T1, hold trigs 5 + 8 during stock step 6 | from stock step 7: 5 8 5 8 … for 20 steps while the stock counter ran 7..16, 1..10; held mask `0x10`, `0x90` |
+| let go during stock step 10 | the next step plays 11, then 12, 13 …: the background count is where the track goes on |
+| MIDI mode (M1), the same hold | M1 and T1 both 5 8 5 8 … and both go on at 11 (the shared mode reaches every track) |
+| GRID REC on, the same hold | nothing taken (held mask never written), every step stock's |
+| LIVE REC (REC + PLAY), the same hold | nothing taken, every step stock's |
+| trig mode 1 (poked: CHROMATIC), the same hold | nothing taken, every step stock's |
+| stopped, the same hold | nothing taken, nothing plays |
+
+Emulator setup notes: the stock SET DATE/TIME popup opens after the load
+(battery RAM has no "last set" date, `--rtc host` or not) and takes UP /
+DOWN; the script dismisses it with NO first. With `--scenario`, pass
+`--watch-mem` to the parent: the ranges are armed before the load.
+
+Not yet for STEP REPEAT: hardware (either model); audio and MIDI out
+(note lengths over repeated steps); PER TRACK and patterns longer than 16
+steps under the port; the page the trig LEDs show (the playhead's page is
+used); micro-timing, conditions and slides on repeated steps; the stress
+project.
+
 ## Not yet
 
 - MIDI tracks beyond a first check; the MIDI length offset `+0x28` is

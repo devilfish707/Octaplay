@@ -28,6 +28,7 @@ for i in range(symtab[5] // 16):
 with open('syms.h', 'w') as f:
     for k in ('pm_step_entry', 'pm_state', 'pm_ready', 'pm_cur', 'pm_table', 'pm_restart', 'pm_show_entry',
               'pm_peek_entry', 'pm_key_entry', 'pm_proj_line', 'pm_memcpy', 'pm_key_updown', 'pm_project_line',
-              'pm_project_begin', 'pm_project_format', 'pm_pattern_copy', 'pm_pattern_clear', 'pm_line', 'pm_map'):
+              'pm_project_begin', 'pm_project_format', 'pm_pattern_copy', 'pm_pattern_clear', 'pm_line', 'pm_map',
+              'pm_held', 'pm_trig_key'):
         f.write(f'#define S_{k.upper()} 0x{syms[k]:x}u\n')
 print('wrote blob.txt, syms.h')

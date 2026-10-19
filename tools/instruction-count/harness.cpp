@@ -13,6 +13,7 @@
 #include "syms.h"
 using namespace ot;
 static const uint32_t STOP = 0x46f00000, SP0 = 0x46e00000;
+static const unsigned MODES = 7, REPEAT = 6;	// playmode.h: PM_MODES, PM_REPEAT
 static Machine* M;
 static uint32_t minSp = 0xffffffff;
 static void w8(uint32_t a, uint8_t v) { M->write8(a, v); }
@@ -45,7 +46,7 @@ int main() {
 	uint64_t first = call(S_PM_STEP_ENTRY, {0, 0});
 	printf("first use after boot (battery table load): %llu\n", (unsigned long long)first);
 	uint64_t worst = 0, worstShow = 0, worstPeek = 0; unsigned wl = 0, wm = 0;
-	for (unsigned mode = 0; mode < 6; ++mode)
+	for (unsigned mode = 0; mode < MODES; ++mode)
 	for (unsigned per = 0; per < 2; ++per)
 	for (unsigned len : {1u, 2u, 3u, 16u, 17u, 31u, 33u, 47u, 63u, 64u}) {
 		pattern(0, 0, per, len, per ? 0xffff : 0);
@@ -67,7 +68,7 @@ int main() {
 	// MASTER LENGTH 16 over 14-step tracks: the master-restart path, every mode
 	{
 		uint64_t wm16 = 0;
-		for (unsigned mode = 0; mode < 6; ++mode) {
+		for (unsigned mode = 0; mode < MODES; ++mode) {
 			pattern(0, 0, 1, 14, 16);
 			for (unsigned i = 0; i < 17; ++i) w8(S_PM_TABLE + i, mode);
 			m.write16(S_PM_CUR, 0); w32(S_PM_RESTART, 1);
@@ -77,7 +78,7 @@ int main() {
 		printf("master-restart case worst one-track step: %llu\n", (unsigned long long)wm16);
 	}
 	// per mode, and SHUFFLE over many more runs (seeds) at every length
-	for (unsigned mode = 0; mode < 6; ++mode) {
+	for (unsigned mode = 0; mode < MODES; ++mode) {
 		uint64_t wmode = 0;
 		for (unsigned len = 1; len <= 64; ++len) {
 			pattern(0, 0, 1, len, 0xffff);
@@ -93,6 +94,41 @@ int main() {
 		}
 		printf("mode %u worst one-track step: %llu\n", mode, (unsigned long long)wmode);
 		if (wmode > worst) { worst = wmode; wm = mode; }
+	}
+	// STEP REPEAT with keys held: every trig key (the longest scan of the held
+	// steps), every length, both scale modes; the look-ahead and the display too
+	{
+		uint64_t wr = 0, wrPeek = 0, wrShow = 0;
+		for (unsigned per = 0; per < 2; ++per)
+		for (unsigned len : {1u, 2u, 16u, 17u, 33u, 64u})
+		for (uint32_t held : {0xffffu, 0x8001u, 0x8000u}) {
+			pattern(0, 0, per, len, per ? 0xffff : 0);
+			for (unsigned i = 0; i < 17; ++i) w8(S_PM_TABLE + i, REPEAT);
+			m.write16(S_PM_CUR, 0); w32(S_PM_RESTART, 1); w32(S_PM_HELD, held);
+			for (unsigned pass = 0; pass < 3; ++pass)
+			for (unsigned raw = 0; raw < len; ++raw)
+			for (unsigned t = 0; t < 16; ++t) {
+				uint64_t n = call(S_PM_STEP_ENTRY, {t, raw}); if (n > wr) wr = n;
+				uint64_t k = call(S_PM_PEEK_ENTRY, {t, raw + 1}); if (k > wrPeek) wrPeek = k;
+				uint64_t v = call(S_PM_SHOW_ENTRY, {t, raw}); if (v > wrShow) wrShow = v;
+			}
+		}
+		w32(S_PM_HELD, 0);
+		printf("REPEAT, keys held: worst one-track step %llu, look-ahead %llu, display %llu\n",
+		       (unsigned long long)wr, (unsigned long long)wrPeek, (unsigned long long)wrShow);
+		if (wr > worst) { worst = wr; wm = REPEAT; }
+		// a 16-track step, every track in REPEAT with all keys held, the first with a restart
+		pattern(0, 0, 0, 64, 0); for (unsigned i = 0; i < 17; ++i) w8(S_PM_TABLE + i, REPEAT);
+		m.write16(S_PM_CUR, 0); w32(S_PM_HELD, 0xffff);
+		uint64_t ws = 0;
+		for (unsigned raw = 0; raw < 64; ++raw) { w32(S_PM_RESTART, raw == 0); uint64_t sum = 0; for (unsigned t = 0; t < 16; ++t) sum += call(S_PM_STEP_ENTRY, {t, raw}); if (sum > ws) ws = sum; }
+		printf("worst 16-track step in REPEAT, all keys held: %llu\n", (unsigned long long)ws);
+		w32(S_PM_HELD, 0);
+		// one key event (the trig-key stub's C call): press, hold and release of each key
+		uint64_t wk = 0;
+		for (unsigned key = 0; key < 16; ++key) for (uint32_t ev : {1u, 2u, 0u}) { uint64_t n = call(S_PM_TRIG_KEY, {0, key, ev, 1}); if (n > wk) wk = n; }
+		for (unsigned key = 0; key < 16; ++key) { uint64_t n = call(S_PM_TRIG_KEY, {0, key, 1, 0}); if (n > wk) wk = n; }
+		printf("pm_trig_key (one trig-key event): %llu\n", (unsigned long long)wk);
 	}
 	printf("worst pm_step_entry (one track step): %llu instructions (len %u, mode %u)\n", (unsigned long long)worst, wl, wm);
 	printf("worst pm_show_entry (UI step query): %llu\n", (unsigned long long)worstShow);
